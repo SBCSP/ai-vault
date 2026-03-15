@@ -8,11 +8,20 @@ import '../providers/vault_provider.dart';
 import '../services/ai_service.dart';
 import '../widgets/ai_search_bar.dart';
 import 'entry_form_screen.dart';
+import 'note_form_screen.dart';
 import 'ollama_screen.dart';
 import 'settings_screen.dart';
 import 'categories_screen.dart';
 import 'expired_secrets_screen.dart';
 import 'vault_list_screen.dart';
+
+/// Route to the correct form based on entry category
+Widget _formScreenForEntry(VaultEntry entry) {
+  if (entry.category.toLowerCase() == 'note') {
+    return NoteFormScreen(entry: entry);
+  }
+  return EntryFormScreen(entry: entry);
+}
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -21,7 +30,10 @@ class HomeScreen extends ConsumerStatefulWidget {
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends ConsumerState<HomeScreen> {
+class _HomeScreenState extends ConsumerState<HomeScreen>
+    with SingleTickerProviderStateMixin {
+  bool _fabOpen = false;
+
   @override
   Widget build(BuildContext context) {
     final entriesAsync = ref.watch(vaultEntriesProvider);
@@ -45,47 +57,157 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
         ],
       ),
-      body: entriesAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
-        data: (entries) {
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 800),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    // AI Search bar
-                    const AiSearchBar(),
-                    const SizedBox(height: 16),
+      body: Stack(
+        children: [
+          entriesAsync.when(
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (e, _) => Center(child: Text('Error: $e')),
+            data: (entries) {
+              return SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 800),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // AI Search bar
+                        const AiSearchBar(),
+                        const SizedBox(height: 16),
 
-                    // Stats cards row
-                    _StatsRow(entries: entries, aiService: aiService),
-                    const SizedBox(height: 24),
+                        // Stats cards row
+                        _StatsRow(entries: entries, aiService: aiService),
+                        const SizedBox(height: 24),
 
-                    // Upcoming expirations
-                    _ExpiringSecretsSection(entries: entries),
-                    const SizedBox(height: 24),
+                        // Upcoming expirations
+                        _ExpiringSecretsSection(entries: entries),
+                        const SizedBox(height: 24),
 
-                    // Recently updated
-                    _RecentSecretsSection(entries: entries),
-                  ],
+                        // Recently updated
+                        _RecentSecretsSection(entries: entries),
+                        // Extra padding so FAB doesn't cover content
+                        const SizedBox(height: 80),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+          // Scrim overlay when FAB menu is open
+          if (_fabOpen)
+            Positioned.fill(
+              child: GestureDetector(
+                onTap: () => setState(() => _fabOpen = false),
+                child: Container(
+                  color: Colors.black54,
                 ),
               ),
             ),
-          );
-        },
+        ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const EntryFormScreen()),
+      floatingActionButton: _buildSpeedDial(context),
+    );
+  }
+
+  Widget _buildSpeedDial(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        // Menu items (visible when open)
+        if (_fabOpen) ...[
+          _SpeedDialItem(
+            icon: Icons.key,
+            label: 'Add Secret',
+            onTap: () {
+              setState(() => _fabOpen = false);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => const EntryFormScreen()),
+              );
+            },
+            theme: theme,
+          ),
+          const SizedBox(height: 12),
+          _SpeedDialItem(
+            icon: Icons.note_add,
+            label: 'New Note',
+            onTap: () {
+              setState(() => _fabOpen = false);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => const NoteFormScreen()),
+              );
+            },
+            theme: theme,
+          ),
+          const SizedBox(height: 16),
+        ],
+        // Main FAB
+        FloatingActionButton(
+          onPressed: () => setState(() => _fabOpen = !_fabOpen),
+          child: AnimatedRotation(
+            turns: _fabOpen ? 0.125 : 0,
+            duration: const Duration(milliseconds: 200),
+            child: const Icon(Icons.add, size: 28),
+          ),
         ),
-        icon: const Icon(Icons.add),
-        label: const Text('Add Secret'),
-      ),
+      ],
+    );
+  }
+}
+
+/// Speed dial menu item
+class _SpeedDialItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final ThemeData theme;
+
+  const _SpeedDialItem({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    required this.theme,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.15),
+                blurRadius: 4,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Text(
+            label,
+            style: theme.textTheme.labelLarge?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        FloatingActionButton.small(
+          heroTag: label,
+          onPressed: onTap,
+          child: Icon(icon),
+        ),
+      ],
     );
   }
 }
@@ -571,7 +693,7 @@ class _ExpiryListItem extends StatelessWidget {
       onTap: () => Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => EntryFormScreen(entry: entry),
+          builder: (_) => _formScreenForEntry(entry),
         ),
       ),
     );
@@ -679,7 +801,7 @@ class _RecentSecretsSection extends StatelessWidget {
                   onTap: () => Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => EntryFormScreen(entry: entry),
+                      builder: (_) => _formScreenForEntry(entry),
                     ),
                   ),
                 );
