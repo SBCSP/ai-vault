@@ -1,27 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../models/note.dart';
 import '../models/vault_entry.dart';
 import '../providers/ai_provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/notes_provider.dart';
 import '../providers/vault_provider.dart';
 import '../services/ai_service.dart';
 import '../widgets/ai_search_bar.dart';
 import 'entry_form_screen.dart';
 import 'note_form_screen.dart';
+import 'notes_list_screen.dart';
 import 'ollama_screen.dart';
 import 'settings_screen.dart';
 import 'categories_screen.dart';
 import 'expired_secrets_screen.dart';
 import 'vault_list_screen.dart';
-
-/// Route to the correct form based on entry category
-Widget _formScreenForEntry(VaultEntry entry) {
-  if (entry.category.toLowerCase() == 'note') {
-    return NoteFormScreen(entry: entry);
-  }
-  return EntryFormScreen(entry: entry);
-}
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -37,6 +32,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   @override
   Widget build(BuildContext context) {
     final entriesAsync = ref.watch(vaultEntriesProvider);
+    final notesAsync = ref.watch(notesProvider);
     final aiService = ref.watch(aiServiceProvider);
 
     return Scaffold(
@@ -63,6 +59,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             loading: () => const Center(child: CircularProgressIndicator()),
             error: (e, _) => Center(child: Text('Error: $e')),
             data: (entries) {
+              final notes = notesAsync.valueOrNull ?? [];
               return SingleChildScrollView(
                 padding: const EdgeInsets.all(16),
                 child: Center(
@@ -72,11 +69,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         // AI Search bar
-                        const AiSearchBar(),
+                        const AiChatWidget(),
                         const SizedBox(height: 16),
 
                         // Stats cards row
-                        _StatsRow(entries: entries, aiService: aiService),
+                        _StatsRow(
+                          entries: entries,
+                          notes: notes,
+                          aiService: aiService,
+                        ),
                         const SizedBox(height: 24),
 
                         // Upcoming expirations
@@ -215,9 +216,14 @@ class _SpeedDialItem extends StatelessWidget {
 /// Top row of stat cards
 class _StatsRow extends StatefulWidget {
   final List<VaultEntry> entries;
+  final List<Note> notes;
   final dynamic aiService;
 
-  const _StatsRow({required this.entries, required this.aiService});
+  const _StatsRow({
+    required this.entries,
+    required this.notes,
+    required this.aiService,
+  });
 
   @override
   State<_StatsRow> createState() => _StatsRowState();
@@ -261,25 +267,37 @@ class _StatsRowState extends State<_StatsRow> {
       categories[entry.category] = (categories[entry.category] ?? 0) + 1;
     }
 
+    final noteCount = widget.notes.length;
+
     return LayoutBuilder(
       builder: (context, constraints) {
-        final crossAxisCount = constraints.maxWidth > 600 ? 4 : 2;
+        final crossAxisCount = constraints.maxWidth > 600 ? 5 : 2;
         return GridView.count(
           crossAxisCount: crossAxisCount,
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           mainAxisSpacing: 12,
           crossAxisSpacing: 12,
-          childAspectRatio: 1.3,
+          childAspectRatio: constraints.maxWidth > 600 ? 1.1 : 1.3,
           children: [
             _DashboardCard(
               icon: Icons.shield,
               iconColor: Colors.indigo,
-              label: 'Total Secrets',
+              label: 'Secrets',
               value: '$totalSecrets',
               onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => const VaultListScreen()),
+              ),
+            ),
+            _DashboardCard(
+              icon: Icons.note,
+              iconColor: Colors.amber.shade700,
+              label: 'Notes',
+              value: '$noteCount',
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const NotesListScreen()),
               ),
             ),
             _DashboardCard(
@@ -693,7 +711,7 @@ class _ExpiryListItem extends StatelessWidget {
       onTap: () => Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => _formScreenForEntry(entry),
+          builder: (_) => EntryFormScreen(entry: entry),
         ),
       ),
     );
@@ -801,7 +819,7 @@ class _RecentSecretsSection extends StatelessWidget {
                   onTap: () => Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => _formScreenForEntry(entry),
+                      builder: (_) => EntryFormScreen(entry: entry),
                     ),
                   ),
                 );
@@ -820,8 +838,6 @@ class _RecentSecretsSection extends StatelessWidget {
         return Icons.key;
       case 'credit card':
         return Icons.credit_card;
-      case 'note':
-        return Icons.note;
       case 'ssh key':
         return Icons.terminal;
       case 'wifi':

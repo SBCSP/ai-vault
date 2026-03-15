@@ -5,7 +5,6 @@ import '../providers/auth_provider.dart';
 import '../providers/vault_provider.dart';
 import '../widgets/vault_entry_tile.dart';
 import 'entry_form_screen.dart';
-import 'note_form_screen.dart';
 
 class VaultListScreen extends ConsumerStatefulWidget {
   const VaultListScreen({super.key});
@@ -128,9 +127,7 @@ class _VaultListScreenState extends ConsumerState<VaultListScreen> {
                       onTap: () => Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) => entry.category.toLowerCase() == 'note'
-                              ? NoteFormScreen(entry: entry)
-                              : EntryFormScreen(entry: entry),
+                          builder: (_) => EntryFormScreen(entry: entry),
                         ),
                       ),
                       onDelete: () => ref

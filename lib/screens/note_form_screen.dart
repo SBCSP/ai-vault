@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../models/vault_entry.dart';
+import '../models/note.dart';
 import '../providers/auth_provider.dart';
-import '../providers/vault_provider.dart';
+import '../providers/notes_provider.dart';
 
 class NoteFormScreen extends ConsumerStatefulWidget {
-  final VaultEntry? entry;
+  final Note? note;
 
-  const NoteFormScreen({super.key, this.entry});
+  const NoteFormScreen({super.key, this.note});
 
   @override
   ConsumerState<NoteFormScreen> createState() => _NoteFormScreenState();
@@ -20,15 +20,15 @@ class _NoteFormScreenState extends ConsumerState<NoteFormScreen> {
   late final TextEditingController _bodyController;
   late final TextEditingController _tagsController;
 
-  bool get _isEditing => widget.entry != null;
+  bool get _isEditing => widget.note != null;
 
   @override
   void initState() {
     super.initState();
-    final e = widget.entry;
-    _titleController = TextEditingController(text: e?.title ?? '');
-    _bodyController = TextEditingController(text: e?.notes ?? '');
-    _tagsController = TextEditingController(text: e?.tags ?? '');
+    final n = widget.note;
+    _titleController = TextEditingController(text: n?.title ?? '');
+    _bodyController = TextEditingController(text: n?.body ?? '');
+    _tagsController = TextEditingController(text: n?.tags ?? '');
   }
 
   @override
@@ -134,26 +134,22 @@ class _NoteFormScreenState extends ConsumerState<NoteFormScreen> {
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
 
-    final actions = ref.read(vaultActionsProvider);
+    final actions = ref.read(noteActionsProvider);
     final now = DateTime.now();
 
-    final entry = VaultEntry(
-      id: widget.entry?.id ?? '',
+    final note = Note(
+      id: widget.note?.id ?? '',
       title: _titleController.text.trim(),
-      username: '',
-      password: '',
-      url: '',
-      notes: _bodyController.text,
-      category: 'Note',
+      body: _bodyController.text,
       tags: _tagsController.text.trim(),
-      createdAt: widget.entry?.createdAt ?? now,
+      createdAt: widget.note?.createdAt ?? now,
       updatedAt: now,
     );
 
     if (_isEditing) {
-      await actions.updateEntry(entry);
+      await actions.updateNote(note);
     } else {
-      await actions.addEntry(entry);
+      await actions.addNote(note);
     }
 
     if (mounted) Navigator.pop(context);

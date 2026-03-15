@@ -3,8 +3,10 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/note.dart';
 import '../models/vault_entry.dart';
 import '../services/ai_service.dart';
+import 'notes_provider.dart';
 import 'vault_provider.dart';
 
 final aiServiceProvider =
@@ -38,54 +40,112 @@ class AiServiceNotifier extends StateNotifier<AiService> {
   }
 }
 
-final aiSearchProvider =
-    StateNotifierProvider<AiSearchNotifier, AiSearchState>((ref) {
-  return AiSearchNotifier(ref);
+// --- AI Chat Provider ---
+// Maintains conversation history in memory for multi-turn chat.
+
+final aiChatProvider =
+    StateNotifierProvider<AiChatNotifier, AiChatState>((ref) {
+  return AiChatNotifier(ref);
 });
 
-class AiSearchState {
-  final bool isSearching;
-  final AiSearchResult? result;
+class AiChatState {
+  final List<ChatMessage> messages;
+  final bool isProcessing;
   final String? error;
 
-  const AiSearchState({
-    this.isSearching = false,
-    this.result,
+  const AiChatState({
+    this.messages = const [],
+    this.isProcessing = false,
     this.error,
   });
+
+  AiChatState copyWith({
+    List<ChatMessage>? messages,
+    bool? isProcessing,
+    String? Function()? error,
+  }) {
+    return AiChatState(
+      messages: messages ?? this.messages,
+      isProcessing: isProcessing ?? this.isProcessing,
+      error: error != null ? error() : this.error,
+    );
+  }
 }
 
-class AiSearchNotifier extends StateNotifier<AiSearchState> {
+class AiChatNotifier extends StateNotifier<AiChatState> {
   final Ref _ref;
 
-  AiSearchNotifier(this._ref) : super(const AiSearchState());
+  AiChatNotifier(this._ref) : super(const AiChatState());
 
-  Future<void> search(String query) async {
-    if (query.trim().isEmpty) {
-      state = const AiSearchState();
-      return;
-    }
+  Future<void> sendMessage(String query) async {
+    if (query.trim().isEmpty) return;
 
-    state = const AiSearchState(isSearching: true);
+    // Add user message
+    final userMessage = ChatMessage(
+      text: query,
+      isUser: true,
+    );
+
+    state = state.copyWith(
+      messages: [...state.messages, userMessage],
+      isProcessing: true,
+      error: () => null,
+    );
 
     try {
       final aiService = _ref.read(aiServiceProvider);
-      final entriesAsync = _ref.read(vaultEntriesProvider);
 
+      final entriesAsync = _ref.read(vaultEntriesProvider);
       final entries = entriesAsync.whenOrNull<List<VaultEntry>>(
             data: (data) => data,
           ) ??
           [];
 
-      final result = await aiService.searchVault(query, entries);
-      state = AiSearchState(result: result);
+      final notesAsync = _ref.read(notesProvider);
+      final notesList = notesAsync.whenOrNull<List<Note>>(
+            data: (data) => data,
+          ) ??
+          [];
+
+      // Pass conversation history (exclude the message we just added —
+      // the chat() method receives the query separately)
+      final history = state.messages
+          .where((m) => m != userMessage)
+          .toList();
+
+      final response = await aiService.chat(
+        query,
+        history,
+        entries,
+        notesList,
+      );
+
+      if (!mounted) return;
+
+      final assistantMessage = ChatMessage(
+        text: response.text,
+        isUser: false,
+        matchedEntries: response.matchedEntries,
+        matchedNotes: response.matchedNotes,
+        aiOnline: response.aiOnline,
+        isVaultResult: response.isVaultResult,
+      );
+
+      state = state.copyWith(
+        messages: [...state.messages, assistantMessage],
+        isProcessing: false,
+      );
     } catch (e) {
-      state = AiSearchState(error: e.toString());
+      if (!mounted) return;
+      state = state.copyWith(
+        isProcessing: false,
+        error: () => e.toString(),
+      );
     }
   }
 
-  void clear() {
-    state = const AiSearchState();
+  void newChat() {
+    state = const AiChatState();
   }
 }
 

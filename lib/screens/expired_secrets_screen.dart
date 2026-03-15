@@ -5,7 +5,6 @@ import '../models/vault_entry.dart';
 import '../providers/auth_provider.dart';
 import '../providers/vault_provider.dart';
 import 'entry_form_screen.dart';
-import 'note_form_screen.dart';
 
 class ExpiredSecretsScreen extends ConsumerWidget {
   const ExpiredSecretsScreen({super.key});
@@ -117,9 +116,7 @@ class _ExpiredEntryTile extends ConsumerWidget {
         onTap: () => Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => entry.category.toLowerCase() == 'note'
-                ? NoteFormScreen(entry: entry)
-                : EntryFormScreen(entry: entry),
+            builder: (_) => EntryFormScreen(entry: entry),
           ),
         ),
       ),
@@ -163,8 +160,6 @@ class _ExpiredEntryTile extends ConsumerWidget {
         return Icons.key;
       case 'credit card':
         return Icons.credit_card;
-      case 'note':
-        return Icons.note;
       case 'ssh key':
         return Icons.terminal;
       case 'wifi':
