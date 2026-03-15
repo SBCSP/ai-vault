@@ -1,0 +1,871 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../models/vault_entry.dart';
+import '../providers/ai_provider.dart';
+import '../providers/auth_provider.dart';
+import '../providers/vault_provider.dart';
+import '../services/ai_service.dart';
+import '../widgets/ai_search_bar.dart';
+import 'entry_form_screen.dart';
+import 'settings_screen.dart';
+import 'categories_screen.dart';
+import 'vault_list_screen.dart';
+
+class HomeScreen extends ConsumerStatefulWidget {
+  const HomeScreen({super.key});
+
+  @override
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends ConsumerState<HomeScreen> {
+  @override
+  Widget build(BuildContext context) {
+    final entriesAsync = ref.watch(vaultEntriesProvider);
+    final aiService = ref.watch(aiServiceProvider);
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('AI Vault'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const SettingsScreen()),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.lock),
+            tooltip: 'Lock vault',
+            onPressed: () => ref.read(authStateProvider.notifier).lock(),
+          ),
+        ],
+      ),
+      body: entriesAsync.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (e, _) => Center(child: Text('Error: $e')),
+        data: (entries) {
+          return SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 800),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // AI Search bar
+                    const AiSearchBar(),
+                    const SizedBox(height: 16),
+
+                    // Stats cards row
+                    _StatsRow(entries: entries, aiService: aiService),
+                    const SizedBox(height: 24),
+
+                    // Upcoming expirations
+                    _ExpiringSecretsSection(entries: entries),
+                    const SizedBox(height: 24),
+
+                    // Recently updated
+                    _RecentSecretsSection(entries: entries),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const EntryFormScreen()),
+        ),
+        icon: const Icon(Icons.add),
+        label: const Text('Add Secret'),
+      ),
+    );
+  }
+}
+
+/// Top row of stat cards
+class _StatsRow extends StatefulWidget {
+  final List<VaultEntry> entries;
+  final dynamic aiService;
+
+  const _StatsRow({required this.entries, required this.aiService});
+
+  @override
+  State<_StatsRow> createState() => _StatsRowState();
+}
+
+class _StatsRowState extends State<_StatsRow> {
+  OllamaStatus? _ollamaStatus;
+  bool _isPulling = false;
+  String _pullProgress = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _checkOllama();
+  }
+
+  @override
+  void didUpdateWidget(covariant _StatsRow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.aiService != widget.aiService) {
+      _checkOllama();
+    }
+  }
+
+  Future<void> _checkOllama() async {
+    setState(() => _ollamaStatus = null);
+    final status = await widget.aiService.checkStatus();
+    if (mounted) {
+      setState(() => _ollamaStatus = status);
+    }
+  }
+
+  Future<void> _pullModel() async {
+    setState(() {
+      _isPulling = true;
+      _pullProgress = 'Starting download...';
+    });
+
+    final modelName = widget.aiService.model;
+    await for (final update in widget.aiService.pullModel(modelName)) {
+      if (!mounted) return;
+
+      final status = update['status'] as String? ?? '';
+
+      if (update.containsKey('error')) {
+        setState(() {
+          _isPulling = false;
+          _pullProgress = 'Error: ${update['error']}';
+        });
+        return;
+      }
+
+      // Show download progress
+      if (update.containsKey('completed') && update.containsKey('total')) {
+        final completed = update['completed'] as int;
+        final total = update['total'] as int;
+        if (total > 0) {
+          final pct = (completed / total * 100).toStringAsFixed(0);
+          final mb = (completed / 1024 / 1024).toStringAsFixed(0);
+          final totalMb = (total / 1024 / 1024).toStringAsFixed(0);
+          setState(
+              () => _pullProgress = '$status ${mb}MB / ${totalMb}MB ($pct%)');
+        }
+      } else {
+        setState(() => _pullProgress = status);
+      }
+    }
+
+    if (mounted) {
+      setState(() {
+        _isPulling = false;
+        _pullProgress = '';
+      });
+      // Re-check status after pull
+      _checkOllama();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final entries = widget.entries;
+    final totalSecrets = entries.length;
+    final expiredCount = entries.where((e) => e.isExpired).length;
+    final expiringSoonCount = entries.where((e) => e.isExpiringSoon).length;
+
+    // Category breakdown
+    final categories = <String, int>{};
+    for (final entry in entries) {
+      categories[entry.category] = (categories[entry.category] ?? 0) + 1;
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final crossAxisCount = constraints.maxWidth > 600 ? 4 : 2;
+        return GridView.count(
+          crossAxisCount: crossAxisCount,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          mainAxisSpacing: 12,
+          crossAxisSpacing: 12,
+          childAspectRatio: 1.3,
+          children: [
+            _DashboardCard(
+              icon: Icons.shield,
+              iconColor: Colors.indigo,
+              label: 'Total Secrets',
+              value: '$totalSecrets',
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const VaultListScreen()),
+              ),
+            ),
+            _DashboardCard(
+              icon: Icons.warning_amber,
+              iconColor: expiredCount > 0 ? Colors.red : Colors.green,
+              label: 'Expired',
+              value: '$expiredCount',
+              subtitle: expiringSoonCount > 0
+                  ? '$expiringSoonCount expiring soon'
+                  : null,
+            ),
+            _DashboardCard(
+              icon: Icons.category,
+              iconColor: Colors.teal,
+              label: 'Categories',
+              value: '${categories.length}',
+              subtitle: categories.entries
+                  .take(3)
+                  .map((e) => '${e.key}: ${e.value}')
+                  .join(', '),
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => const CategoriesScreen()),
+              ),
+            ),
+            _OllamaStatusCard(
+              status: _ollamaStatus,
+              modelName: widget.aiService.model,
+              onRefresh: _checkOllama,
+              onPullModel: _pullModel,
+              isPulling: _isPulling,
+              pullProgress: _pullProgress,
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// Individual dashboard stat card
+class _DashboardCard extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String label;
+  final String value;
+  final String? subtitle;
+  final VoidCallback? onTap;
+
+  const _DashboardCard({
+    required this.icon,
+    required this.iconColor,
+    required this.label,
+    required this.value,
+    this.subtitle,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Card(
+      elevation: 2,
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Icon(icon, color: iconColor, size: 24),
+                  if (onTap != null)
+                    Icon(
+                      Icons.arrow_forward_ios,
+                      size: 12,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                ],
+              ),
+              const Spacer(),
+              Text(
+                value,
+                style: theme.textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              Text(
+                label,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              if (subtitle != null)
+                Text(
+                  subtitle!,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Ollama connection status card with model download capability
+class _OllamaStatusCard extends StatelessWidget {
+  final OllamaStatus? status;
+  final String modelName;
+  final VoidCallback onRefresh;
+  final VoidCallback onPullModel;
+  final bool isPulling;
+  final String pullProgress;
+
+  const _OllamaStatusCard({
+    required this.status,
+    required this.modelName,
+    required this.onRefresh,
+    required this.onPullModel,
+    this.isPulling = false,
+    this.pullProgress = '',
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    final Color statusColor;
+    final IconData statusIcon;
+    final String statusText;
+    final String subtitleText;
+    final VoidCallback? action;
+
+    if (isPulling) {
+      statusColor = Colors.blue;
+      statusIcon = Icons.downloading;
+      statusText = 'Downloading...';
+      subtitleText = pullProgress;
+      action = null; // disable taps while pulling
+    } else if (status == null) {
+      statusColor = Colors.grey;
+      statusIcon = Icons.sync;
+      statusText = 'Checking...';
+      subtitleText = 'Ollama \u2022 $modelName';
+      action = onRefresh;
+    } else {
+      switch (status!.status) {
+        case OllamaConnectionStatus.ready:
+          statusColor = Colors.green;
+          statusIcon = Icons.check_circle;
+          statusText = 'Ready';
+          subtitleText = 'Ollama \u2022 $modelName';
+          action = onRefresh;
+        case OllamaConnectionStatus.ollamaNotRunning:
+          statusColor = Colors.red;
+          statusIcon = Icons.error;
+          statusText = 'Not Running';
+          subtitleText = 'Install/start Ollama';
+          action = () => _showOllamaNotRunning(context);
+        case OllamaConnectionStatus.modelNotFound:
+          statusColor = Colors.orange;
+          statusIcon = Icons.warning;
+          statusText = 'Model Missing';
+          subtitleText = 'Tap to download $modelName';
+          action = () => _showModelMissing(context);
+      }
+    }
+
+    return Card(
+      elevation: 2,
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: action,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Icon(Icons.smart_toy, color: statusColor, size: 24),
+                  if (isPulling)
+                    const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  else
+                    Container(
+                      width: 10,
+                      height: 10,
+                      decoration: BoxDecoration(
+                        color: statusColor,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: statusColor.withValues(alpha: 0.5),
+                            blurRadius: 6,
+                            spreadRadius: 1,
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+              const Spacer(),
+              Row(
+                children: [
+                  Icon(statusIcon, size: 14, color: statusColor),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      statusText,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: statusColor,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+              Text(
+                subtitleText,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showOllamaNotRunning(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.error, color: Colors.red),
+            SizedBox(width: 8),
+            Text('Ollama Not Found'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'AI Vault requires Ollama to be installed and running for AI-powered search.',
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'To get started:',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const SelectableText(
+                '1. Download Ollama from:\n'
+                '   https://ollama.com\n\n'
+                '2. Install and launch Ollama\n\n'
+                '3. Come back and tap refresh',
+                style: TextStyle(fontFamily: 'monospace', fontSize: 13),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close'),
+          ),
+          FilledButton.icon(
+            onPressed: () {
+              Navigator.pop(ctx);
+              onRefresh();
+            },
+            icon: const Icon(Icons.refresh),
+            label: const Text('Retry'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showModelMissing(BuildContext context) {
+    final available = status?.availableModels ?? [];
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.warning, color: Colors.orange),
+            SizedBox(width: 8),
+            Text('Model Not Found'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Ollama is running, but the model "$modelName" is not downloaded.',
+            ),
+            const SizedBox(height: 16),
+            if (available.isNotEmpty) ...[
+              const Text(
+                'Available models:',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 4),
+              ...available.take(5).map((m) => Padding(
+                    padding: const EdgeInsets.only(left: 8, bottom: 2),
+                    child: Text('\u2022 $m',
+                        style: const TextStyle(fontSize: 13)),
+                  )),
+              const SizedBox(height: 12),
+            ],
+            const Text(
+              'Tap "Download Model" to pull it now, or run:',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: SelectableText(
+                'ollama pull $modelName',
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton.icon(
+            onPressed: () {
+              Navigator.pop(ctx);
+              onPullModel();
+            },
+            icon: const Icon(Icons.download),
+            label: const Text('Download Model'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Section showing secrets that are expired or expiring soon
+class _ExpiringSecretsSection extends StatelessWidget {
+  final List<VaultEntry> entries;
+
+  const _ExpiringSecretsSection({required this.entries});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    // Get expired + expiring soon entries, sorted by expiry date
+    final expiring = entries
+        .where((e) => e.expiresAt != null && (e.isExpired || e.isExpiringSoon))
+        .toList()
+      ..sort((a, b) => a.expiresAt!.compareTo(b.expiresAt!));
+
+    // Also show upcoming (next 90 days) that aren't in "soon" range
+    final upcoming = entries
+        .where((e) =>
+            e.expiresAt != null &&
+            !e.isExpired &&
+            !e.isExpiringSoon &&
+            e.expiresAt!.isBefore(
+                DateTime.now().add(const Duration(days: 90))))
+        .toList()
+      ..sort((a, b) => a.expiresAt!.compareTo(b.expiresAt!));
+
+    final allUpcoming = [...expiring, ...upcoming].take(5).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.schedule, color: theme.colorScheme.primary),
+            const SizedBox(width: 8),
+            Text(
+              'Upcoming Expirations',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (allUpcoming.isEmpty)
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Center(
+                child: Column(
+                  children: [
+                    Icon(
+                      Icons.check_circle_outline,
+                      size: 40,
+                      color: Colors.green.withValues(alpha: 0.7),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'No upcoming expirations',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          )
+        else
+          Card(
+            child: Column(
+              children: allUpcoming.map((entry) {
+                return _ExpiryListItem(entry: entry);
+              }).toList(),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// Single expiring entry row
+class _ExpiryListItem extends StatelessWidget {
+  final VaultEntry entry;
+
+  const _ExpiryListItem({required this.entry});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final expiresAt = entry.expiresAt!;
+    final daysLeft = expiresAt.difference(DateTime.now()).inDays;
+
+    final Color statusColor;
+    final String statusLabel;
+
+    if (entry.isExpired) {
+      statusColor = theme.colorScheme.error;
+      final daysAgo = DateTime.now().difference(expiresAt).inDays;
+      statusLabel = 'Expired ${daysAgo}d ago';
+    } else if (entry.isExpiringSoon) {
+      statusColor = Colors.orange;
+      statusLabel = '${daysLeft}d left';
+    } else {
+      statusColor = theme.colorScheme.onSurfaceVariant;
+      statusLabel = '${daysLeft}d left';
+    }
+
+    return ListTile(
+      leading: CircleAvatar(
+        backgroundColor: statusColor.withValues(alpha: 0.15),
+        child: Icon(
+          entry.isExpired ? Icons.error : Icons.schedule,
+          color: statusColor,
+          size: 20,
+        ),
+      ),
+      title: Text(
+        entry.title,
+        style: const TextStyle(fontWeight: FontWeight.w600),
+      ),
+      subtitle: Text(
+        '${entry.category} \u2022 Expires ${expiresAt.year}-${expiresAt.month.toString().padLeft(2, '0')}-${expiresAt.day.toString().padLeft(2, '0')}',
+      ),
+      trailing: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: statusColor.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Text(
+          statusLabel,
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: statusColor,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ),
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => EntryFormScreen(entry: entry),
+        ),
+      ),
+    );
+  }
+}
+
+/// Section showing recently added/updated secrets
+class _RecentSecretsSection extends StatelessWidget {
+  final List<VaultEntry> entries;
+
+  const _RecentSecretsSection({required this.entries});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    final recent = [...entries]
+      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    final top5 = recent.take(5).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.history, color: theme.colorScheme.primary),
+                const SizedBox(width: 8),
+                Text(
+                  'Recently Updated',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            TextButton(
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const VaultListScreen()),
+              ),
+              child: const Text('View All'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (top5.isEmpty)
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Center(
+                child: Text(
+                  'No secrets yet. Tap + to add one.',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ),
+          )
+        else
+          Card(
+            child: Column(
+              children: top5.map((entry) {
+                final date = entry.updatedAt;
+                final dateStr =
+                    '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+                return ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor:
+                        theme.colorScheme.primaryContainer,
+                    child: Icon(
+                      _categoryIcon(entry.category),
+                      color: theme.colorScheme.primary,
+                      size: 20,
+                    ),
+                  ),
+                  title: Text(
+                    entry.title,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  subtitle: Text(
+                    '${entry.category} \u2022 $dateStr',
+                  ),
+                  trailing: entry.isExpired
+                      ? Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.error
+                                .withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            'EXPIRED',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: theme.colorScheme.error,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        )
+                      : null,
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => EntryFormScreen(entry: entry),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+      ],
+    );
+  }
+
+  IconData _categoryIcon(String category) {
+    switch (category.toLowerCase()) {
+      case 'login':
+        return Icons.login;
+      case 'api key':
+        return Icons.key;
+      case 'credit card':
+        return Icons.credit_card;
+      case 'note':
+        return Icons.note;
+      case 'ssh key':
+        return Icons.terminal;
+      case 'wifi':
+        return Icons.wifi;
+      default:
+        return Icons.lock;
+    }
+  }
+}
