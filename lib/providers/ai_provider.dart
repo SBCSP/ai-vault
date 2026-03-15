@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -84,5 +86,130 @@ class AiSearchNotifier extends StateNotifier<AiSearchState> {
 
   void clear() {
     state = const AiSearchState();
+  }
+}
+
+// --- Model Download Provider ---
+// Persists download state across navigation so downloads continue in background.
+
+final modelDownloadProvider =
+    StateNotifierProvider<ModelDownloadNotifier, ModelDownloadState>((ref) {
+  return ModelDownloadNotifier(ref);
+});
+
+class ModelDownloadState {
+  final bool isDownloading;
+  final String? modelName;
+  final String status;
+  final double? progress; // 0.0 - 1.0
+  final String? error;
+  final bool completed;
+
+  const ModelDownloadState({
+    this.isDownloading = false,
+    this.modelName,
+    this.status = '',
+    this.progress,
+    this.error,
+    this.completed = false,
+  });
+
+  ModelDownloadState copyWith({
+    bool? isDownloading,
+    String? modelName,
+    String? status,
+    double? Function()? progress,
+    String? Function()? error,
+    bool? completed,
+  }) {
+    return ModelDownloadState(
+      isDownloading: isDownloading ?? this.isDownloading,
+      modelName: modelName ?? this.modelName,
+      status: status ?? this.status,
+      progress: progress != null ? progress() : this.progress,
+      error: error != null ? error() : this.error,
+      completed: completed ?? this.completed,
+    );
+  }
+}
+
+class ModelDownloadNotifier extends StateNotifier<ModelDownloadState> {
+  final Ref _ref;
+
+  ModelDownloadNotifier(this._ref) : super(const ModelDownloadState());
+
+  Future<void> downloadModel(String modelName) async {
+    if (state.isDownloading) return; // Prevent concurrent downloads
+
+    state = ModelDownloadState(
+      isDownloading: true,
+      modelName: modelName,
+      status: 'Starting download...',
+    );
+
+    final aiService = _ref.read(aiServiceProvider);
+
+    try {
+      await for (final update in aiService.pullModel(modelName)) {
+        if (!mounted) return;
+
+        final status = update['status'] as String? ?? '';
+
+        if (update.containsKey('error')) {
+          state = ModelDownloadState(
+            isDownloading: false,
+            modelName: modelName,
+            status: '',
+            error: update['error'] as String?,
+          );
+          return;
+        }
+
+        if (update.containsKey('completed') && update.containsKey('total')) {
+          final completed = update['completed'] as int;
+          final total = update['total'] as int;
+          if (total > 0) {
+            final pct = (completed / total * 100).toStringAsFixed(0);
+            final mb = (completed / 1024 / 1024).toStringAsFixed(0);
+            final totalMb = (total / 1024 / 1024).toStringAsFixed(0);
+            state = ModelDownloadState(
+              isDownloading: true,
+              modelName: modelName,
+              status: '$status — ${mb}MB / ${totalMb}MB ($pct%)',
+              progress: completed / total,
+            );
+          }
+        } else {
+          state = ModelDownloadState(
+            isDownloading: true,
+            modelName: modelName,
+            status: status,
+          );
+        }
+      }
+
+      if (mounted) {
+        state = ModelDownloadState(
+          isDownloading: false,
+          modelName: modelName,
+          status: 'Done! $modelName is ready to use.',
+          completed: true,
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        state = ModelDownloadState(
+          isDownloading: false,
+          modelName: modelName,
+          error: e.toString(),
+        );
+      }
+    }
+  }
+
+  void clearCompleted() {
+    if (!state.isDownloading) {
+      state = const ModelDownloadState();
+    }
   }
 }
