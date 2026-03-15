@@ -110,6 +110,173 @@ class AiService {
     }
   }
 
+  /// Detect if a query is a "meta query" — asking about the vault itself
+  /// rather than searching for a specific entry.
+  /// Returns a filtered list of entries if it's a meta query, or null if not.
+  _MetaQueryResult? _detectMetaQuery(
+    String queryLower,
+    List<VaultEntry> entries,
+  ) {
+    // --- Expiration queries ---
+    final expirationPatterns = [
+      'expired', 'expiring', 'expiration', 'expire',
+      'out of date', 'outdated', 'old secrets', 'stale',
+    ];
+    final isExpirationQuery = expirationPatterns.any(
+      (p) => queryLower.contains(p),
+    );
+
+    if (isExpirationQuery) {
+      // Check if they specifically want "expiring soon" vs "expired"
+      final wantExpiringSoon = queryLower.contains('expiring soon') ||
+          queryLower.contains('about to expire') ||
+          queryLower.contains('expiring');
+      final wantExpired = queryLower.contains('expired') ||
+          queryLower.contains('out of date') ||
+          queryLower.contains('outdated') ||
+          queryLower.contains('stale');
+
+      List<VaultEntry> filtered;
+      if (wantExpiringSoon && !wantExpired) {
+        filtered = entries.where((e) => e.isExpiringSoon).toList()
+          ..sort((a, b) => a.expiresAt!.compareTo(b.expiresAt!));
+      } else if (wantExpired && !wantExpiringSoon) {
+        filtered = entries.where((e) => e.isExpired).toList()
+          ..sort((a, b) => a.expiresAt!.compareTo(b.expiresAt!));
+      } else {
+        // Both or ambiguous — show expired + expiring soon
+        filtered = entries
+            .where((e) => e.isExpired || e.isExpiringSoon)
+            .toList()
+          ..sort((a, b) => a.expiresAt!.compareTo(b.expiresAt!));
+      }
+
+      return _MetaQueryResult(
+        entries: filtered,
+        queryType: 'expiration',
+      );
+    }
+
+    // --- Recent / latest queries ---
+    final recentPatterns = [
+      'recent', 'latest', 'last added', 'newest', 'just added',
+      'last updated', 'recently',
+    ];
+    final isRecentQuery = recentPatterns.any((p) => queryLower.contains(p));
+
+    if (isRecentQuery) {
+      final sorted = [...entries]
+        ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+      return _MetaQueryResult(
+        entries: sorted.take(5).toList(),
+        queryType: 'recent',
+      );
+    }
+
+    // --- "How many" / count queries ---
+    final countPatterns = [
+      'how many', 'count', 'total', 'number of',
+    ];
+    final isCountQuery = countPatterns.any((p) => queryLower.contains(p));
+
+    if (isCountQuery) {
+      // Return all entries — the AI will summarize
+      return _MetaQueryResult(
+        entries: entries,
+        queryType: 'count',
+      );
+    }
+
+    // --- "Show all" / category listing queries ---
+    final allPatterns = [
+      'show all', 'list all', 'all my', 'everything',
+      'all secrets', 'all entries', 'what do i have',
+    ];
+    final isAllQuery = allPatterns.any((p) => queryLower.contains(p));
+
+    if (isAllQuery) {
+      // Check if they want a specific category
+      final impliedCategory = _detectCategory(queryLower);
+      List<VaultEntry> filtered;
+      if (impliedCategory != null) {
+        filtered = entries
+            .where((e) =>
+                e.category.toLowerCase() == impliedCategory.toLowerCase())
+            .toList()
+          ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+      } else {
+        filtered = [...entries]
+          ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+      }
+      return _MetaQueryResult(
+        entries: filtered.take(10).toList(),
+        queryType: 'listing',
+      );
+    }
+
+    return null;
+  }
+
+  /// Build a meta query response — summarizes vault state rather than
+  /// searching for a specific entry.
+  String _buildMetaFallbackResponse(
+    String query,
+    _MetaQueryResult meta,
+  ) {
+    final entries = meta.entries;
+    final buf = StringBuffer();
+
+    switch (meta.queryType) {
+      case 'expiration':
+        final expiredCount = entries.where((e) => e.isExpired).length;
+        final expiringCount = entries.where((e) => e.isExpiringSoon).length;
+        if (entries.isEmpty) {
+          buf.write(
+            'Good news! None of your secrets are expired or expiring soon.',
+          );
+        } else {
+          if (expiredCount > 0) {
+            buf.write(
+              'You have $expiredCount expired '
+              '${expiredCount == 1 ? "secret" : "secrets"}. ',
+            );
+          }
+          if (expiringCount > 0) {
+            buf.write(
+              '$expiringCount ${expiringCount == 1 ? "is" : "are"} '
+              'expiring soon. ',
+            );
+          }
+          buf.write('Here they are:');
+        }
+      case 'recent':
+        buf.write(
+          'Here are your ${entries.length} most recently updated secrets:',
+        );
+      case 'count':
+        buf.write('You have ${entries.length} secrets in your vault.');
+        // Add category breakdown
+        final categories = <String, int>{};
+        for (final e in entries) {
+          categories[e.category] = (categories[e.category] ?? 0) + 1;
+        }
+        if (categories.isNotEmpty) {
+          final breakdown = categories.entries
+              .map((e) => '${e.key}: ${e.value}')
+              .join(', ');
+          buf.write(' Breakdown: $breakdown.');
+        }
+      case 'listing':
+        buf.write(
+          'Here are ${entries.length} entries from your vault:',
+        );
+      default:
+        buf.write('Here is what I found:');
+    }
+
+    return buf.toString();
+  }
+
   Future<AiSearchResult> searchVault(
     String query,
     List<VaultEntry> entries,
@@ -126,19 +293,39 @@ class AiService {
     final aiStatus = await checkStatus();
     final aiOnline = aiStatus.status == OllamaConnectionStatus.ready;
 
-    // Step 2: Try to get LLM-enhanced keywords (only if AI is online)
+    // Step 2: Check if this is a meta query (about the vault itself)
+    final queryLower = query.toLowerCase();
+    final metaResult = _detectMetaQuery(queryLower, entries);
+
+    if (metaResult != null) {
+      final matchedEntries = metaResult.entries;
+
+      String response;
+      if (aiOnline) {
+        response = await _generateMetaResponse(
+          query, metaResult,
+        ) ?? _buildMetaFallbackResponse(query, metaResult);
+      } else {
+        response = _buildMetaFallbackResponse(query, metaResult);
+      }
+
+      return AiSearchResult(
+        response: response,
+        matchedEntries: matchedEntries,
+        aiOnline: aiOnline,
+      );
+    }
+
+    // Step 3: Try to get LLM-enhanced keywords (only if AI is online)
     List<String> keywords = [];
     if (aiOnline) {
       keywords = await _extractKeywords(query);
     }
 
-    // If AI is offline and we got no keywords, we can still do basic search
-    // but we'll flag it clearly
-
-    // Step 3: Score and rank entries using keywords + original query
+    // Step 4: Score and rank entries using keywords + original query
     final scored = _scoreEntries(query, keywords, entries);
 
-    // Step 4: Take top 3 matches (sorted by score desc, then by date desc)
+    // Step 5: Take top 3 matches (sorted by score desc, then by date desc)
     scored.sort((a, b) {
       final scoreCmp = b.score.compareTo(a.score);
       if (scoreCmp != 0) return scoreCmp;
@@ -161,7 +348,7 @@ class AiService {
         );
         response = suggestion ?? "I couldn't find anything matching \"$query\" in your vault. Try different keywords, or add a new entry with the + button!";
       } else {
-        response = "I couldn't find anything matching \"$query\". Note: AI is offline — connect Ollama for smarter search results.";
+        response = "I couldn't find anything matching \"$query\". Note: AI is offline - connect Ollama for smarter search results.";
       }
       return AiSearchResult(
         response: response,
@@ -170,7 +357,7 @@ class AiService {
       );
     }
 
-    // Step 5: Generate a conversational AI response wrapping the results
+    // Step 6: Generate a conversational AI response wrapping the results
     final matchedEntries = topMatches.map((s) => s.entry).toList()
       ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
 
@@ -229,6 +416,76 @@ class AiService {
         'Do NOT use markdown formatting.';
 
     return _askLlm(prompt);
+  }
+
+  /// Generate an AI response specifically for meta queries (expiration, counts, etc.)
+  /// Uses a tailored prompt so the LLM only talks about what was asked.
+  Future<String?> _generateMetaResponse(
+    String query,
+    _MetaQueryResult meta,
+  ) async {
+    final entries = meta.entries;
+
+    if (entries.isEmpty) {
+      // Let the LLM give a friendly "nothing found" for the specific query type
+      final context = switch (meta.queryType) {
+        'expiration' => 'None of the user\'s secrets are expired or expiring soon.',
+        'recent' => 'The user has no secrets in their vault yet.',
+        'count' => 'The user\'s vault is empty.',
+        'listing' => 'No entries matched the user\'s request.',
+        _ => 'No matching entries were found.',
+      };
+
+      return _askLlm(
+        '$_systemPrompt\n\n'
+        'The user asked: "$query"\n\n'
+        '$context\n'
+        'Respond with a brief, friendly message (1-2 sentences). '
+        'Do NOT use markdown formatting.',
+      );
+    }
+
+    final entrySummaries = entries.map((e) {
+      final parts = <String>['Title: ${e.title}'];
+      if (e.category.isNotEmpty) parts.add('Category: ${e.category}');
+      if (e.expiresAt != null) {
+        final expDate = '${e.expiresAt!.year}-${e.expiresAt!.month.toString().padLeft(2, '0')}-${e.expiresAt!.day.toString().padLeft(2, '0')}';
+        if (e.isExpired) {
+          final daysAgo = DateTime.now().difference(e.expiresAt!).inDays;
+          parts.add('EXPIRED on $expDate ($daysAgo days ago)');
+        } else if (e.isExpiringSoon) {
+          final daysLeft = e.expiresAt!.difference(DateTime.now()).inDays;
+          parts.add('Expiring on $expDate ($daysLeft days left)');
+        } else {
+          parts.add('Expires: $expDate');
+        }
+      }
+      return parts.join(', ');
+    }).join('\n');
+
+    final queryContext = switch (meta.queryType) {
+      'expiration' => 'These are the secrets that are expired or expiring soon. '
+          'ONLY talk about their expiration status. '
+          'Do NOT mention update dates or other unrelated details.',
+      'recent' => 'These are the most recently updated secrets. '
+          'Briefly mention when they were last updated.',
+      'count' => 'The user is asking about how many secrets they have. '
+          'Summarize the count and categories.',
+      'listing' => 'The user wants to see their secrets. '
+          'Briefly acknowledge what you are showing them.',
+      _ => 'Summarize what you found.',
+    };
+
+    return _askLlm(
+      '$_systemPrompt\n\n'
+      'The user asked: "$query"\n\n'
+      'Here are the ${entries.length} relevant entries:\n$entrySummaries\n\n'
+      '$queryContext\n'
+      'Write a brief, friendly response (1-2 sentences max). '
+      'Reference entries by name. '
+      'Do NOT mention entries or details that are not listed above. '
+      'Do NOT use markdown formatting.',
+    );
   }
 
   /// Fallback response when AI is offline — still friendly but simpler
@@ -317,6 +574,66 @@ Keywords:''';
     }
   }
 
+  /// Map of category-implying keywords to their actual category names.
+  /// When the user's query contains these words, we know what category they want.
+  static const _categorySignals = <String, String>{
+    'api key': 'API Key',
+    'apikey': 'API Key',
+    'api keys': 'API Key',
+    'apikeys': 'API Key',
+    'api token': 'API Key',
+    'token': 'API Key',
+    'password': 'Login',
+    'login': 'Login',
+    'credential': 'Login',
+    'credentials': 'Login',
+    'credit card': 'Credit Card',
+    'card': 'Credit Card',
+    'ssh': 'SSH Key',
+    'ssh key': 'SSH Key',
+    'private key': 'SSH Key',
+    'public key': 'SSH Key',
+    'wifi': 'WiFi',
+    'wireless': 'WiFi',
+    'network': 'WiFi',
+    'note': 'Note',
+    'secure note': 'Note',
+  };
+
+  /// Words that are generic category/type descriptors, not identity keywords.
+  /// These should NOT be used to match entry titles/content — only for
+  /// category filtering.
+  static final _genericWords = <String>{
+    'api', 'key', 'keys', 'apikey', 'apikeys', 'token', 'tokens',
+    'password', 'passwords', 'login', 'logins', 'credential', 'credentials',
+    'credit', 'card', 'ssh', 'wifi', 'wireless', 'network',
+    'note', 'notes', 'secret', 'secrets',
+    'find', 'show', 'get', 'give', 'need', 'want', 'where', 'what',
+    'my', 'the', 'for', 'me',
+  };
+
+  /// Detect which category the user is asking about based on their query.
+  String? _detectCategory(String queryLower) {
+    // Check longer phrases first to avoid partial matches
+    final sortedSignals = _categorySignals.keys.toList()
+      ..sort((a, b) => b.length.compareTo(a.length));
+    for (final signal in sortedSignals) {
+      if (queryLower.contains(signal)) {
+        return _categorySignals[signal];
+      }
+    }
+    return null;
+  }
+
+  /// Extract identity keywords — words that identify WHICH specific entry
+  /// the user wants (e.g., "anthropic", "github", "stripe"), filtering out
+  /// generic category/type words.
+  List<String> _extractIdentityWords(List<String> queryWords) {
+    return queryWords
+        .where((w) => !_genericWords.contains(w) && w.length > 1)
+        .toList();
+  }
+
   /// Score each entry against keywords and the original query
   List<_ScoredEntry> _scoreEntries(
     String query,
@@ -329,51 +646,120 @@ Keywords:''';
         .where((w) => w.length > 1)
         .toList();
 
-    // Combine query words with LLM-extracted keywords
+    // Detect if the query implies a specific category
+    final impliedCategory = _detectCategory(queryLower);
+
+    // Separate identity words from generic words
+    final identityWords = _extractIdentityWords(queryWords);
+
+    // Also extract identity words from LLM keywords
+    final llmIdentityWords = keywords
+        .where((k) => !_genericWords.contains(k) && k.length > 1)
+        .toList();
+
+    // All identity keywords combined (what makes this entry unique)
+    final allIdentity = <String>{...identityWords, ...llmIdentityWords}.toList();
+
+    // All keywords for general matching
     final allKeywords = <String>{...keywords, ...queryWords}.toList();
 
     return entries.map((entry) {
       double score = 0;
 
       final title = entry.title.toLowerCase();
-      final category = entry.category.toLowerCase();
       final tags = entry.tags.toLowerCase();
       final notes = entry.notes.toLowerCase();
       final username = entry.username.toLowerCase();
       final url = entry.url.toLowerCase();
 
+      // --- Category matching ---
+      if (impliedCategory != null) {
+        if (entry.category.toLowerCase() ==
+            impliedCategory.toLowerCase()) {
+          // Entry is in the right category — bonus
+          score += 15;
+        } else {
+          // Entry is in the WRONG category — significant penalty
+          score -= 20;
+        }
+      }
+
+      // --- Identity keyword matching (the important part) ---
+      int identityHits = 0;
+      for (final keyword in allIdentity) {
+        bool matched = false;
+        if (title.contains(keyword)) {
+          score += 15;
+          matched = true;
+        }
+        if (tags.contains(keyword)) {
+          score += 8;
+          matched = true;
+        }
+        if (username.contains(keyword)) {
+          score += 6;
+          matched = true;
+        }
+        if (url.contains(keyword)) {
+          score += 6;
+          matched = true;
+        }
+        if (notes.contains(keyword)) {
+          score += 3;
+          matched = true;
+        }
+        if (matched) {
+          identityHits++;
+        }
+      }
+
+      // If there are identity keywords but NONE matched this entry,
+      // it's almost certainly not what the user wants
+      if (allIdentity.isNotEmpty && identityHits == 0) {
+        score -= 10;
+      }
+
+      // Bonus for matching ALL identity keywords (not just some)
+      if (allIdentity.isNotEmpty && identityHits == allIdentity.length) {
+        score += 10;
+      }
+
+      // --- General keyword matching (lower weight, for broad relevance) ---
       for (final keyword in allKeywords) {
-        // Title matches are most important
-        if (title.contains(keyword)) score += 10;
-        // Category match (e.g., "API Key" category)
-        if (category.contains(keyword)) score += 8;
-        // Tags match
-        if (tags.contains(keyword)) score += 6;
-        // Username/URL match
-        if (username.contains(keyword)) score += 4;
-        if (url.contains(keyword)) score += 4;
-        // Notes match
-        if (notes.contains(keyword)) score += 2;
+        // Skip generic words for title/content matching — they only matter
+        // for category, which we already handled above
+        if (_genericWords.contains(keyword)) continue;
+
+        // Only give additional points if not already counted as identity
+        if (!allIdentity.contains(keyword)) {
+          if (title.contains(keyword)) score += 5;
+          if (tags.contains(keyword)) score += 3;
+          if (username.contains(keyword)) score += 2;
+          if (url.contains(keyword)) score += 2;
+          if (notes.contains(keyword)) score += 1;
+        }
       }
 
       // Exact title match bonus
-      if (title == queryLower) score += 20;
+      if (title == queryLower) score += 25;
 
-      // Partial title match bonus (title contains query or vice versa)
+      // Partial title match bonus
       if (title.contains(queryLower) || queryLower.contains(title)) {
-        score += 5;
+        score += 8;
       }
 
-      // Check for fuzzy word overlap between query and title
-      final titleWords = title.split(RegExp(r'[\s,.\-_]+')).where((w) => w.length > 1);
+      // Check for fuzzy word overlap between query identity words and title
+      final titleWords = title
+          .split(RegExp(r'[\s,.\-_]+'))
+          .where((w) => w.length > 1);
       for (final tw in titleWords) {
-        for (final qw in queryWords) {
+        for (final qw in identityWords) {
           if (tw == qw) {
-            score += 8;
+            score += 10;
           } else if (tw.contains(qw) || qw.contains(tw)) {
-            score += 4;
+            score += 5;
           } else if (_levenshtein(tw, qw) <= 2) {
-            score += 3; // typo tolerance
+            score += 4; // typo tolerance
           }
         }
       }
@@ -419,6 +805,13 @@ class _ScoredEntry {
   final double score;
 
   _ScoredEntry({required this.entry, required this.score});
+}
+
+class _MetaQueryResult {
+  final List<VaultEntry> entries;
+  final String queryType; // 'expiration', 'recent', 'count', 'listing'
+
+  _MetaQueryResult({required this.entries, required this.queryType});
 }
 
 class AiSearchResult {

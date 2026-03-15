@@ -10,6 +10,7 @@ import '../widgets/ai_search_bar.dart';
 import 'entry_form_screen.dart';
 import 'settings_screen.dart';
 import 'categories_screen.dart';
+import 'expired_secrets_screen.dart';
 import 'vault_list_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -214,6 +215,11 @@ class _StatsRowState extends State<_StatsRow> {
               subtitle: expiringSoonCount > 0
                   ? '$expiringSoonCount expiring soon'
                   : null,
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => const ExpiredSecretsScreen()),
+              ),
             ),
             _DashboardCard(
               icon: Icons.category,
