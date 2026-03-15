@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/auth_provider.dart';
-import '../widgets/av_logo.dart';
+
 
 class LockScreen extends ConsumerStatefulWidget {
   const LockScreen({super.key});
@@ -38,8 +38,12 @@ class _LockScreenState extends ConsumerState<LockScreen> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const AvLogo(size: 120),
-                const SizedBox(height: 32),
+                Icon(
+                  Icons.lock_rounded,
+                  size: 80,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(height: 24),
                 Text(
                   'AI Vault',
                   style: Theme.of(context).textTheme.headlineLarge?.copyWith(
