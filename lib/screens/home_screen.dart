@@ -8,6 +8,7 @@ import '../providers/vault_provider.dart';
 import '../services/ai_service.dart';
 import '../widgets/ai_search_bar.dart';
 import 'entry_form_screen.dart';
+import 'ollama_screen.dart';
 import 'settings_screen.dart';
 import 'categories_screen.dart';
 import 'expired_secrets_screen.dart';
@@ -102,8 +103,6 @@ class _StatsRow extends StatefulWidget {
 
 class _StatsRowState extends State<_StatsRow> {
   OllamaStatus? _ollamaStatus;
-  bool _isPulling = false;
-  String _pullProgress = '';
 
   @override
   void initState() {
@@ -124,52 +123,6 @@ class _StatsRowState extends State<_StatsRow> {
     final status = await widget.aiService.checkStatus();
     if (mounted) {
       setState(() => _ollamaStatus = status);
-    }
-  }
-
-  Future<void> _pullModel() async {
-    setState(() {
-      _isPulling = true;
-      _pullProgress = 'Starting download...';
-    });
-
-    final modelName = widget.aiService.model;
-    await for (final update in widget.aiService.pullModel(modelName)) {
-      if (!mounted) return;
-
-      final status = update['status'] as String? ?? '';
-
-      if (update.containsKey('error')) {
-        setState(() {
-          _isPulling = false;
-          _pullProgress = 'Error: ${update['error']}';
-        });
-        return;
-      }
-
-      // Show download progress
-      if (update.containsKey('completed') && update.containsKey('total')) {
-        final completed = update['completed'] as int;
-        final total = update['total'] as int;
-        if (total > 0) {
-          final pct = (completed / total * 100).toStringAsFixed(0);
-          final mb = (completed / 1024 / 1024).toStringAsFixed(0);
-          final totalMb = (total / 1024 / 1024).toStringAsFixed(0);
-          setState(
-              () => _pullProgress = '$status ${mb}MB / ${totalMb}MB ($pct%)');
-        }
-      } else {
-        setState(() => _pullProgress = status);
-      }
-    }
-
-    if (mounted) {
-      setState(() {
-        _isPulling = false;
-        _pullProgress = '';
-      });
-      // Re-check status after pull
-      _checkOllama();
     }
   }
 
@@ -239,10 +192,15 @@ class _StatsRowState extends State<_StatsRow> {
             _OllamaStatusCard(
               status: _ollamaStatus,
               modelName: widget.aiService.model,
-              onRefresh: _checkOllama,
-              onPullModel: _pullModel,
-              isPulling: _isPulling,
-              pullProgress: _pullProgress,
+              onTap: () async {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const OllamaScreen()),
+                );
+                // Refresh status when returning from Ollama screen
+                _checkOllama();
+              },
             ),
           ],
         );
@@ -330,22 +288,16 @@ class _DashboardCard extends StatelessWidget {
   }
 }
 
-/// Ollama connection status card with model download capability
+/// Ollama connection status card — taps navigate to full Ollama management
 class _OllamaStatusCard extends StatelessWidget {
   final OllamaStatus? status;
   final String modelName;
-  final VoidCallback onRefresh;
-  final VoidCallback onPullModel;
-  final bool isPulling;
-  final String pullProgress;
+  final VoidCallback onTap;
 
   const _OllamaStatusCard({
     required this.status,
     required this.modelName,
-    required this.onRefresh,
-    required this.onPullModel,
-    this.isPulling = false,
-    this.pullProgress = '',
+    required this.onTap,
   });
 
   @override
@@ -356,40 +308,29 @@ class _OllamaStatusCard extends StatelessWidget {
     final IconData statusIcon;
     final String statusText;
     final String subtitleText;
-    final VoidCallback? action;
 
-    if (isPulling) {
-      statusColor = Colors.blue;
-      statusIcon = Icons.downloading;
-      statusText = 'Downloading...';
-      subtitleText = pullProgress;
-      action = null; // disable taps while pulling
-    } else if (status == null) {
+    if (status == null) {
       statusColor = Colors.grey;
       statusIcon = Icons.sync;
       statusText = 'Checking...';
-      subtitleText = 'Ollama \u2022 $modelName';
-      action = onRefresh;
+      subtitleText = modelName;
     } else {
       switch (status!.status) {
         case OllamaConnectionStatus.ready:
           statusColor = Colors.green;
           statusIcon = Icons.check_circle;
           statusText = 'Ready';
-          subtitleText = 'Ollama \u2022 $modelName';
-          action = onRefresh;
+          subtitleText = modelName;
         case OllamaConnectionStatus.ollamaNotRunning:
           statusColor = Colors.red;
           statusIcon = Icons.error;
           statusText = 'Not Running';
-          subtitleText = 'Install/start Ollama';
-          action = () => _showOllamaNotRunning(context);
+          subtitleText = 'Tap to configure';
         case OllamaConnectionStatus.modelNotFound:
           statusColor = Colors.orange;
           statusIcon = Icons.warning;
           statusText = 'Model Missing';
-          subtitleText = 'Tap to download $modelName';
-          action = () => _showModelMissing(context);
+          subtitleText = 'Tap to configure';
       }
     }
 
@@ -397,7 +338,7 @@ class _OllamaStatusCard extends StatelessWidget {
       elevation: 2,
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: action,
+        onTap: onTap,
         borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.all(12),
@@ -408,28 +349,21 @@ class _OllamaStatusCard extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Icon(Icons.smart_toy, color: statusColor, size: 24),
-                  if (isPulling)
-                    const SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  else
-                    Container(
-                      width: 10,
-                      height: 10,
-                      decoration: BoxDecoration(
-                        color: statusColor,
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: statusColor.withValues(alpha: 0.5),
-                            blurRadius: 6,
-                            spreadRadius: 1,
-                          ),
-                        ],
-                      ),
+                  Container(
+                    width: 10,
+                    height: 10,
+                    decoration: BoxDecoration(
+                      color: statusColor,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: statusColor.withValues(alpha: 0.5),
+                          blurRadius: 6,
+                          spreadRadius: 1,
+                        ),
+                      ],
                     ),
+                  ),
                 ],
               ),
               const Spacer(),
@@ -448,6 +382,11 @@ class _OllamaStatusCard extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
+                  Icon(
+                    Icons.arrow_forward_ios,
+                    size: 12,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ],
               ),
               Text(
@@ -461,135 +400,6 @@ class _OllamaStatusCard extends StatelessWidget {
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  void _showOllamaNotRunning(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(Icons.error, color: Colors.red),
-            SizedBox(width: 8),
-            Text('Ollama Not Found'),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'AI Vault requires Ollama to be installed and running for AI-powered search.',
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'To get started:',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const SelectableText(
-                '1. Download Ollama from:\n'
-                '   https://ollama.com\n\n'
-                '2. Install and launch Ollama\n\n'
-                '3. Come back and tap refresh',
-                style: TextStyle(fontFamily: 'monospace', fontSize: 13),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Close'),
-          ),
-          FilledButton.icon(
-            onPressed: () {
-              Navigator.pop(ctx);
-              onRefresh();
-            },
-            icon: const Icon(Icons.refresh),
-            label: const Text('Retry'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showModelMissing(BuildContext context) {
-    final available = status?.availableModels ?? [];
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(Icons.warning, color: Colors.orange),
-            SizedBox(width: 8),
-            Text('Model Not Found'),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Ollama is running, but the model "$modelName" is not downloaded.',
-            ),
-            const SizedBox(height: 16),
-            if (available.isNotEmpty) ...[
-              const Text(
-                'Available models:',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 4),
-              ...available.take(5).map((m) => Padding(
-                    padding: const EdgeInsets.only(left: 8, bottom: 2),
-                    child: Text('\u2022 $m',
-                        style: const TextStyle(fontSize: 13)),
-                  )),
-              const SizedBox(height: 12),
-            ],
-            const Text(
-              'Tap "Download Model" to pull it now, or run:',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: SelectableText(
-                'ollama pull $modelName',
-                style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          FilledButton.icon(
-            onPressed: () {
-              Navigator.pop(ctx);
-              onPullModel();
-            },
-            icon: const Icon(Icons.download),
-            label: const Text('Download Model'),
-          ),
-        ],
       ),
     );
   }

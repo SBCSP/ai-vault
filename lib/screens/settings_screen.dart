@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/ai_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/category_provider.dart';
-import '../services/ai_service.dart';
+import 'ollama_screen.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -14,29 +14,10 @@ class SettingsScreen extends ConsumerStatefulWidget {
 }
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
-  late final TextEditingController _urlController;
-  late final TextEditingController _modelController;
-  bool _testing = false;
-  OllamaStatus? _connectionResult;
-
-  @override
-  void initState() {
-    super.initState();
-    final aiService = ref.read(aiServiceProvider);
-    _urlController = TextEditingController(text: aiService.serverUrl);
-    _modelController = TextEditingController(text: aiService.model);
-  }
-
-  @override
-  void dispose() {
-    _urlController.dispose();
-    _modelController.dispose();
-    super.dispose();
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final currentModel = ref.watch(aiServiceProvider).model;
 
     return Scaffold(
       appBar: AppBar(
@@ -57,77 +38,52 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                // Ollama / AI link card
                 Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Icon(Icons.auto_awesome,
-                                color: theme.colorScheme.primary),
-                            const SizedBox(width: 8),
-                            Text(
-                              'AI Configuration',
-                              style: theme.textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.bold,
-                              ),
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const OllamaScreen()),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
+                        children: [
+                          Icon(Icons.smart_toy,
+                              color: theme.colorScheme.primary),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment:
+                                  CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Ollama Models',
+                                  style: theme.textTheme.titleMedium
+                                      ?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                Text(
+                                  'Active: $currentModel',
+                                  style:
+                                      theme.textTheme.bodySmall?.copyWith(
+                                    color: theme
+                                        .colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-                        TextField(
-                          controller: _urlController,
-                          decoration: const InputDecoration(
-                            labelText: 'Ollama Server URL',
-                            hintText: 'http://localhost:11434',
-                            prefixIcon: Icon(Icons.dns),
-                            border: OutlineInputBorder(),
                           ),
-                          onChanged: (value) {
-                            ref
-                                .read(aiServiceProvider.notifier)
-                                .updateServerUrl(value);
-                            setState(() => _connectionResult = null);
-                          },
-                        ),
-                        const SizedBox(height: 16),
-                        TextField(
-                          controller: _modelController,
-                          decoration: const InputDecoration(
-                            labelText: 'Model Name',
-                            hintText: 'gemma3:1b',
-                            prefixIcon: Icon(Icons.psychology),
-                            border: OutlineInputBorder(),
+                          Icon(
+                            Icons.arrow_forward_ios,
+                            size: 16,
+                            color: theme.colorScheme.onSurfaceVariant,
                           ),
-                          onChanged: (value) {
-                            ref
-                                .read(aiServiceProvider.notifier)
-                                .updateModel(value);
-                          },
-                        ),
-                        const SizedBox(height: 16),
-                        Row(
-                          children: [
-                            FilledButton.icon(
-                              onPressed: _testing ? null : _testConnection,
-                              icon: _testing
-                                  ? const SizedBox(
-                                      width: 16,
-                                      height: 16,
-                                      child: CircularProgressIndicator(
-                                          strokeWidth: 2),
-                                    )
-                                  : const Icon(Icons.wifi_find),
-                              label: const Text('Test Connection'),
-                            ),
-                            const SizedBox(width: 12),
-                            if (_connectionResult != null)
-                              _buildStatusBadge(theme),
-                          ],
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -156,7 +112,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         const SizedBox(height: 12),
                         Text(
                           'To use AI search, you need Ollama installed '
-                          'and running with the Gemma 3 1B model:',
+                          'and running with a model downloaded:',
                           style: theme.textTheme.bodyMedium,
                         ),
                         const SizedBox(height: 8),
@@ -169,10 +125,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           ),
                           child: SelectableText(
                             '# Install Ollama from https://ollama.com\n\n'
-                            '# Pull and run the Gemma 3 1B model:\n'
+                            '# Pull and run a model:\n'
                             'ollama run gemma3:1b\n\n'
-                            '# Ollama runs on http://localhost:11434\n'
-                            '# The server starts automatically on install.',
+                            '# Or manage models directly from\n'
+                            '# the Ollama Models page above.',
                             style: theme.textTheme.bodySmall?.copyWith(
                               fontFamily: 'monospace',
                             ),
@@ -188,59 +144,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         ),
       ),
     );
-  }
-
-  Widget _buildStatusBadge(ThemeData theme) {
-    final status = _connectionResult!.status;
-
-    final Color color;
-    final IconData icon;
-    final String text;
-
-    switch (status) {
-      case OllamaConnectionStatus.ready:
-        color = Colors.green;
-        icon = Icons.check_circle;
-        text = 'Ready';
-      case OllamaConnectionStatus.ollamaNotRunning:
-        color = theme.colorScheme.error;
-        icon = Icons.error;
-        text = 'Ollama not running';
-      case OllamaConnectionStatus.modelNotFound:
-        color = Colors.orange;
-        icon = Icons.warning;
-        text = 'Model not found';
-    }
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, color: color, size: 20),
-        const SizedBox(width: 4),
-        Flexible(
-          child: Text(
-            text,
-            style: TextStyle(color: color, fontWeight: FontWeight.w500),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Future<void> _testConnection() async {
-    setState(() {
-      _testing = true;
-      _connectionResult = null;
-    });
-
-    final result = await ref.read(aiServiceProvider).checkStatus();
-
-    if (mounted) {
-      setState(() {
-        _testing = false;
-        _connectionResult = result;
-      });
-    }
   }
 }
 
