@@ -671,6 +671,12 @@ Keywords:''';
       final notes = entry.notes.toLowerCase();
       final username = entry.username.toLowerCase();
       final url = entry.url.toLowerCase();
+      final isNote = entry.category.toLowerCase() == 'note';
+
+      // For Note entries, the body (notes field) IS the primary content,
+      // so it should be scored much higher — equivalent to title.
+      final notesWeight = isNote ? 12 : 3;
+      final notesGeneralWeight = isNote ? 4 : 1;
 
       // --- Category matching ---
       if (impliedCategory != null) {
@@ -705,7 +711,7 @@ Keywords:''';
           matched = true;
         }
         if (notes.contains(keyword)) {
-          score += 3;
+          score += notesWeight;
           matched = true;
         }
         if (matched) {
@@ -727,8 +733,15 @@ Keywords:''';
       // --- General keyword matching (lower weight, for broad relevance) ---
       for (final keyword in allKeywords) {
         // Skip generic words for title/content matching — they only matter
-        // for category, which we already handled above
-        if (_genericWords.contains(keyword)) continue;
+        // for category, which we already handled above.
+        // EXCEPTION: For Note entries, generic words like "password" might
+        // be actual content in the note body, so still match them there.
+        if (_genericWords.contains(keyword)) {
+          if (isNote && notes.contains(keyword)) {
+            score += notesGeneralWeight;
+          }
+          continue;
+        }
 
         // Only give additional points if not already counted as identity
         if (!allIdentity.contains(keyword)) {
@@ -736,7 +749,7 @@ Keywords:''';
           if (tags.contains(keyword)) score += 3;
           if (username.contains(keyword)) score += 2;
           if (url.contains(keyword)) score += 2;
-          if (notes.contains(keyword)) score += 1;
+          if (notes.contains(keyword)) score += notesGeneralWeight;
         }
       }
 
