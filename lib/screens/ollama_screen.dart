@@ -20,10 +20,6 @@ class _OllamaScreenState extends ConsumerState<OllamaScreen> {
   OllamaStatus? _status;
   bool _checking = false;
   List<_OllamaModelInfo> _models = [];
-  bool _isPulling = false;
-  String _pullStatus = '';
-  double? _pullProgress;
-  String? _pullingModelName;
 
   @override
   void initState() {
@@ -102,64 +98,13 @@ class _OllamaScreenState extends ConsumerState<OllamaScreen> {
     }
   }
 
-  Future<void> _downloadModel() async {
+  void _startDownload() {
     final modelName = _downloadModelController.text.trim();
     if (modelName.isEmpty) return;
 
-    setState(() {
-      _isPulling = true;
-      _pullStatus = 'Starting download...';
-      _pullProgress = null;
-      _pullingModelName = modelName;
-    });
-
-    final aiService = ref.read(aiServiceProvider);
-
-    await for (final update in aiService.pullModel(modelName)) {
-      if (!mounted) return;
-
-      final status = update['status'] as String? ?? '';
-
-      if (update.containsKey('error')) {
-        setState(() {
-          _isPulling = false;
-          _pullStatus = 'Error: ${update['error']}';
-          _pullProgress = null;
-          _pullingModelName = null;
-        });
-        return;
-      }
-
-      if (update.containsKey('completed') && update.containsKey('total')) {
-        final completed = update['completed'] as int;
-        final total = update['total'] as int;
-        if (total > 0) {
-          final pct = (completed / total * 100).toStringAsFixed(0);
-          final mb = (completed / 1024 / 1024).toStringAsFixed(0);
-          final totalMb = (total / 1024 / 1024).toStringAsFixed(0);
-          setState(() {
-            _pullProgress = completed / total;
-            _pullStatus = '$status — ${mb}MB / ${totalMb}MB ($pct%)';
-          });
-        }
-      } else {
-        setState(() {
-          _pullProgress = null;
-          _pullStatus = status;
-        });
-      }
-    }
-
-    if (mounted) {
-      setState(() {
-        _isPulling = false;
-        _pullProgress = null;
-        _pullStatus = 'Done! $modelName is ready to use.';
-        _pullingModelName = null;
-      });
-      _downloadModelController.clear();
-      _refreshAll();
-    }
+    ref.read(modelDownloadProvider.notifier).downloadModel(modelName);
+    _downloadModelController.clear();
+    setState(() {});
   }
 
   Future<void> _deleteModel(String modelName) async {
@@ -523,26 +468,14 @@ class _OllamaScreenState extends ConsumerState<OllamaScreen> {
                     child: Row(
                       children: [
                         Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                model,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontWeight: isActive
-                                      ? FontWeight.bold
-                                      : FontWeight.normal,
-                                ),
-                              ),
-                              Text(
-                                info.sizeLabel,
-                                style: theme.textTheme.labelSmall?.copyWith(
-                                  color: theme.colorScheme.onSurfaceVariant,
-                                ),
-                              ),
-                            ],
+                          child: Text(
+                            '$model  (${info.sizeLabel})',
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontWeight: isActive
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
+                            ),
                           ),
                         ),
                         if (isActive)
@@ -570,6 +503,20 @@ class _OllamaScreenState extends ConsumerState<OllamaScreen> {
   }
 
   Widget _buildDownloadCard(ThemeData theme) {
+    final downloadState = ref.watch(modelDownloadProvider);
+    final isPulling = downloadState.isDownloading;
+    final hasStatus = downloadState.status.isNotEmpty ||
+        downloadState.error != null ||
+        downloadState.completed;
+
+    // Auto-refresh model list when download completes
+    if (downloadState.completed) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ref.read(modelDownloadProvider.notifier).clearCompleted();
+        _refreshAll();
+      });
+    }
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -595,7 +542,7 @@ class _OllamaScreenState extends ConsumerState<OllamaScreen> {
                 Expanded(
                   child: TextField(
                     controller: _downloadModelController,
-                    enabled: !_isPulling,
+                    enabled: !isPulling,
                     decoration: InputDecoration(
                       labelText: 'Model Name',
                       hintText: 'e.g. llama3.2:1b, mistral, phi3',
@@ -606,7 +553,7 @@ class _OllamaScreenState extends ConsumerState<OllamaScreen> {
                       helperMaxLines: 2,
                       suffixIcon:
                           _downloadModelController.text.isNotEmpty &&
-                                  !_isPulling
+                                  !isPulling
                               ? IconButton(
                                   icon: const Icon(Icons.clear, size: 20),
                                   onPressed: () {
@@ -617,18 +564,18 @@ class _OllamaScreenState extends ConsumerState<OllamaScreen> {
                               : null,
                     ),
                     onChanged: (_) => setState(() {}),
-                    onSubmitted: (_) => _downloadModel(),
+                    onSubmitted: (_) => _startDownload(),
                   ),
                 ),
                 const SizedBox(width: 12),
                 Padding(
                   padding: const EdgeInsets.only(top: 4),
                   child: FilledButton.icon(
-                    onPressed: _isPulling ||
+                    onPressed: isPulling ||
                             _downloadModelController.text.trim().isEmpty
                         ? null
-                        : _downloadModel,
-                    icon: _isPulling
+                        : _startDownload,
+                    icon: isPulling
                         ? const SizedBox(
                             width: 16,
                             height: 16,
@@ -641,9 +588,9 @@ class _OllamaScreenState extends ConsumerState<OllamaScreen> {
                 ),
               ],
             ),
-            if (_isPulling || _pullStatus.isNotEmpty) ...[
+            if (isPulling || hasStatus) ...[
               const SizedBox(height: 12),
-              if (_pullingModelName != null)
+              if (isPulling && downloadState.modelName != null)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 6),
                   child: Row(
@@ -655,7 +602,7 @@ class _OllamaScreenState extends ConsumerState<OllamaScreen> {
                       ),
                       const SizedBox(width: 8),
                       Text(
-                        'Downloading $_pullingModelName...',
+                        'Downloading ${downloadState.modelName}...',
                         style: theme.textTheme.bodySmall?.copyWith(
                           fontWeight: FontWeight.w600,
                         ),
@@ -663,30 +610,40 @@ class _OllamaScreenState extends ConsumerState<OllamaScreen> {
                     ],
                   ),
                 ),
-              if (_pullProgress != null)
+              if (downloadState.progress != null)
                 ClipRRect(
                   borderRadius: BorderRadius.circular(4),
                   child: LinearProgressIndicator(
-                    value: _pullProgress,
+                    value: downloadState.progress,
                     minHeight: 8,
                   ),
                 ),
-              if (_pullProgress == null && _isPulling)
+              if (downloadState.progress == null && isPulling)
                 const ClipRRect(
                   borderRadius: BorderRadius.all(Radius.circular(4)),
                   child: LinearProgressIndicator(minHeight: 8),
                 ),
-              if (_pullStatus.isNotEmpty)
+              if (downloadState.error != null)
                 Padding(
                   padding: const EdgeInsets.only(top: 6),
                   child: Text(
-                    _pullStatus,
+                    'Error: ${downloadState.error}',
                     style: theme.textTheme.bodySmall?.copyWith(
-                      color: _pullStatus.startsWith('Error')
-                          ? theme.colorScheme.error
-                          : _pullStatus.startsWith('Done')
-                              ? Colors.green
-                              : theme.colorScheme.onSurfaceVariant,
+                      color: theme.colorScheme.error,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                )
+              else if (downloadState.status.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                    downloadState.status,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: downloadState.status.startsWith('Done')
+                          ? Colors.green
+                          : theme.colorScheme.onSurfaceVariant,
                     ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,

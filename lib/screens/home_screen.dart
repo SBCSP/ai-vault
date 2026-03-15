@@ -289,7 +289,7 @@ class _DashboardCard extends StatelessWidget {
 }
 
 /// Ollama connection status card — taps navigate to full Ollama management
-class _OllamaStatusCard extends StatelessWidget {
+class _OllamaStatusCard extends ConsumerWidget {
   final OllamaStatus? status;
   final String modelName;
   final VoidCallback onTap;
@@ -301,15 +301,22 @@ class _OllamaStatusCard extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final downloadState = ref.watch(modelDownloadProvider);
+    final isDownloading = downloadState.isDownloading;
 
     final Color statusColor;
     final IconData statusIcon;
     final String statusText;
     final String subtitleText;
 
-    if (status == null) {
+    if (isDownloading) {
+      statusColor = Colors.blue;
+      statusIcon = Icons.downloading;
+      statusText = 'Downloading...';
+      subtitleText = downloadState.modelName ?? '';
+    } else if (status == null) {
       statusColor = Colors.grey;
       statusIcon = Icons.sync;
       statusText = 'Checking...';
@@ -349,24 +356,41 @@ class _OllamaStatusCard extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Icon(Icons.smart_toy, color: statusColor, size: 24),
-                  Container(
-                    width: 10,
-                    height: 10,
-                    decoration: BoxDecoration(
-                      color: statusColor,
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: statusColor.withValues(alpha: 0.5),
-                          blurRadius: 6,
-                          spreadRadius: 1,
-                        ),
-                      ],
+                  if (isDownloading)
+                    const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  else
+                    Container(
+                      width: 10,
+                      height: 10,
+                      decoration: BoxDecoration(
+                        color: statusColor,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: statusColor.withValues(alpha: 0.5),
+                            blurRadius: 6,
+                            spreadRadius: 1,
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
                 ],
               ),
               const Spacer(),
+              if (isDownloading && downloadState.progress != null) ...[
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(3),
+                  child: LinearProgressIndicator(
+                    value: downloadState.progress,
+                    minHeight: 4,
+                  ),
+                ),
+                const SizedBox(height: 4),
+              ],
               Row(
                 children: [
                   Icon(statusIcon, size: 14, color: statusColor),
