@@ -36,14 +36,57 @@ class Notes extends Table {
   Set<Column> get primaryKey => {id};
 }
 
-@DriftDatabase(tables: [VaultEntries, Notes])
+class Embeddings extends Table {
+  TextColumn get id => text()();
+  TextColumn get sourceId => text()();
+  TextColumn get sourceType =>
+      text()(); // 'vault_entry', 'note', or 'document_chunk'
+  TextColumn get embedding => text()(); // JSON-encoded List<double>
+  TextColumn get modelName => text()();
+  TextColumn get contentHash => text()();
+  DateTimeColumn get createdAt => dateTime()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+class Documents extends Table {
+  TextColumn get id => text()();
+  TextColumn get title => text()();
+  TextColumn get filePath => text()();
+  TextColumn get fileType => text().withDefault(const Constant('txt'))();
+  IntColumn get chunkCount => integer().withDefault(const Constant(0))();
+  TextColumn get contentHash => text().withDefault(const Constant(''))();
+  TextColumn get tags => text().withDefault(const Constant(''))();
+  DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get updatedAt => dateTime()();
+  DateTimeColumn get lastIndexedAt => dateTime().nullable()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+class DocumentChunks extends Table {
+  TextColumn get id => text()();
+  TextColumn get documentId => text()();
+  IntColumn get chunkIndex => integer()();
+  TextColumn get content => text()();
+  TextColumn get contentHash => text().withDefault(const Constant(''))();
+  DateTimeColumn get createdAt => dateTime()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+@DriftDatabase(
+    tables: [VaultEntries, Notes, Embeddings, Documents, DocumentChunks])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(openConnection());
 
   AppDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -55,6 +98,13 @@ class AppDatabase extends _$AppDatabase {
             await migrator.createTable(notes);
             // Migrate existing Note entries from vault_entries to notes
             await _migrateNotesToNewTable();
+          }
+          if (from < 4) {
+            await migrator.createTable(embeddings);
+          }
+          if (from < 5) {
+            await migrator.createTable(documents);
+            await migrator.createTable(documentChunks);
           }
         },
       );
@@ -120,4 +170,61 @@ class AppDatabase extends _$AppDatabase {
 
   Future<void> deleteNote(String id) =>
       (delete(notes)..where((t) => t.id.equals(id))).go();
+
+  // --- Embeddings ---
+  Future<List<Embedding>> getAllEmbeddings() => select(embeddings).get();
+
+  Future<Embedding?> getEmbeddingBySourceId(String sourceId) =>
+      (select(embeddings)..where((t) => t.sourceId.equals(sourceId)))
+          .getSingleOrNull();
+
+  Future<void> upsertEmbedding(EmbeddingsCompanion entry) async {
+    await into(embeddings).insertOnConflictUpdate(entry);
+  }
+
+  Future<void> deleteEmbeddingBySourceId(String sourceId) =>
+      (delete(embeddings)..where((t) => t.sourceId.equals(sourceId))).go();
+
+  Future<void> deleteAllEmbeddings() => delete(embeddings).go();
+
+  Future<int> countEmbeddings() async {
+    final count = countAll();
+    final query = selectOnly(embeddings)..addColumns([count]);
+    final result = await query.getSingle();
+    return result.read(count) ?? 0;
+  }
+
+  // --- Documents ---
+  Future<List<Document>> getAllDocuments() => select(documents).get();
+
+  Stream<List<Document>> watchAllDocuments() => select(documents).watch();
+
+  Future<Document?> getDocumentById(String id) =>
+      (select(documents)..where((t) => t.id.equals(id))).getSingleOrNull();
+
+  Future<void> insertDocument(DocumentsCompanion doc) =>
+      into(documents).insert(doc);
+
+  Future<void> updateDocument(DocumentsCompanion doc) =>
+      (update(documents)..where((t) => t.id.equals(doc.id.value))).write(doc);
+
+  Future<void> deleteDocument(String id) =>
+      (delete(documents)..where((t) => t.id.equals(id))).go();
+
+  // --- Document Chunks ---
+  Future<List<DocumentChunk>> getChunksByDocumentId(String documentId) =>
+      (select(documentChunks)
+            ..where((t) => t.documentId.equals(documentId))
+            ..orderBy([(t) => OrderingTerm.asc(t.chunkIndex)]))
+          .get();
+
+  Future<void> insertDocumentChunk(DocumentChunksCompanion chunk) =>
+      into(documentChunks).insert(chunk);
+
+  Future<void> deleteChunksByDocumentId(String documentId) =>
+      (delete(documentChunks)..where((t) => t.documentId.equals(documentId)))
+          .go();
+
+  Future<List<DocumentChunk>> getChunksByIds(List<String> ids) =>
+      (select(documentChunks)..where((t) => t.id.isIn(ids))).get();
 }

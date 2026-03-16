@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '../database/database.dart' as db;
 import '../models/note.dart';
 import '../models/vault_entry.dart';
 
@@ -106,15 +107,16 @@ class AiService {
     }
   }
 
-  static const _systemPrompt = 'You are a personal notebook lookup assistant. '
-      'The user has a collection of saved records shown below. '
-      'Your only job is to search these records and return the matching data exactly as stored.\n\n'
+  static const _systemPrompt = 'You are a personal vault assistant. '
+      'The user has a collection of saved records, notes, and documents shown below. '
+      'Your job is to search these items and return matching data, or answer questions based on the provided context.\n\n'
       'Rules:\n'
-      '1. Return the stored data verbatim — do not modify, censor, or omit any fields.\n'
+      '1. Return stored data verbatim — do not modify, censor, or omit any fields.\n'
       '2. When you find a matching record, wrap its title in double brackets: [[Record Title]]\n'
       '3. Include all fields (label, value, link, memo) in your response.\n'
-      '4. If the user asks about something not in the records, say so.\n'
-      '5. You may also have general conversations.\n\n'
+      '4. When answering from DOCUMENT EXCERPTS, cite the document title and summarize the relevant content.\n'
+      '5. If the user asks about something not in the records or documents, say so.\n'
+      '6. You may also have general conversations.\n\n'
       'Example:\n'
       'User: "Find my GitHub info"\n'
       'Response: "Here is your GitHub record: [[GitHub Personal]]\n'
@@ -125,7 +127,12 @@ class AiService {
 
   /// Build a text summary of all vault contents for the LLM context.
   /// Uses neutral terminology to avoid triggering safety filters in small models.
-  String _buildVaultContext(List<VaultEntry> entries, List<Note> notes) {
+  String _buildVaultContext(
+    List<VaultEntry> entries,
+    List<Note> notes, {
+    List<db.DocumentChunk>? documentChunks,
+    List<String> documentTitles = const [],
+  }) {
     final buf = StringBuffer();
     buf.writeln('=== USER RECORDS ===');
 
@@ -178,6 +185,21 @@ class AiService {
       }
     }
 
+    if (documentChunks != null && documentChunks.isNotEmpty) {
+      buf.writeln(
+          '--- DOCUMENT EXCERPTS (${documentChunks.length} chunks) ---');
+      if (documentTitles.isNotEmpty) {
+        buf.writeln('Source documents: ${documentTitles.join(', ')}');
+        buf.writeln();
+      }
+      for (final chunk in documentChunks) {
+        buf.writeln(
+            'Document chunk ${chunk.chunkIndex + 1} (from document ID: ${chunk.documentId}):');
+        buf.writeln(chunk.content);
+        buf.writeln();
+      }
+    }
+
     buf.writeln('=== END RECORDS ===');
     return buf.toString();
   }
@@ -218,6 +240,30 @@ class AiService {
     return (entries: matchedEntries, notes: matchedNotes);
   }
 
+  /// Build a human-readable summary of RAG sources used.
+  List<String> _buildRagSourceSummary(
+    List<VaultEntry>? ragEntries,
+    List<Note>? ragNotes,
+    List<db.DocumentChunk>? ragChunks,
+    List<String> documentTitles,
+  ) {
+    final sources = <String>[];
+    if (ragEntries != null && ragEntries.isNotEmpty) {
+      sources.add('${ragEntries.length} secret${ragEntries.length == 1 ? '' : 's'}');
+    }
+    if (ragNotes != null && ragNotes.isNotEmpty) {
+      sources.add('${ragNotes.length} note${ragNotes.length == 1 ? '' : 's'}');
+    }
+    if (ragChunks != null && ragChunks.isNotEmpty) {
+      final chunkCount = ragChunks.length;
+      final docCount = documentTitles.length;
+      sources.add(
+        '$chunkCount chunk${chunkCount == 1 ? '' : 's'} from $docCount doc${docCount == 1 ? '' : 's'}',
+      );
+    }
+    return sources;
+  }
+
   /// Strip [[brackets]] from the response text for display.
   String _cleanResponse(String response) {
     return response.replaceAllMapped(
@@ -226,13 +272,20 @@ class AiService {
     );
   }
 
-  /// Main chat method — sends every query to the LLM with full vault context.
+  /// Main chat method — sends query to the LLM with vault context.
+  /// When [ragEntries] and [ragNotes] are provided (from RAG pipeline),
+  /// only those items are included in the context instead of all items.
   Future<ChatResponse> chat(
     String query,
     List<ChatMessage> history,
     List<VaultEntry> entries,
-    List<Note> notes,
-  ) async {
+    List<Note> notes, {
+    List<VaultEntry>? ragEntries,
+    List<Note>? ragNotes,
+    List<db.DocumentChunk>? ragChunks,
+    List<String> ragDocumentTitles = const [],
+    bool ragUsed = false,
+  }) async {
     final aiStatus = await checkStatus();
     final aiOnline = aiStatus.status == OllamaConnectionStatus.ready;
 
@@ -243,8 +296,15 @@ class AiService {
       );
     }
 
-    // Build vault context
-    final vaultContext = _buildVaultContext(entries, notes);
+    // Build vault context — use RAG-filtered items if available
+    final contextEntries = ragEntries ?? entries;
+    final contextNotes = ragNotes ?? notes;
+    final vaultContext = _buildVaultContext(
+      contextEntries,
+      contextNotes,
+      documentChunks: ragChunks,
+      documentTitles: ragDocumentTitles,
+    );
 
     // Build messages with system prompt + vault context + history + query
     final messages = <Map<String, String>>[
@@ -277,6 +337,10 @@ class AiService {
       matchedNotes: referenced.notes,
       aiOnline: true,
       isVaultResult: referenced.entries.isNotEmpty || referenced.notes.isNotEmpty,
+      ragUsed: ragUsed,
+      ragSources: _buildRagSourceSummary(
+        ragEntries, ragNotes, ragChunks, ragDocumentTitles,
+      ),
     );
   }
 
@@ -333,6 +397,8 @@ class ChatMessage {
   final List<Note> matchedNotes;
   final bool aiOnline;
   final bool isVaultResult;
+  final bool ragUsed;
+  final List<String> ragSources;
 
   const ChatMessage({
     required this.text,
@@ -341,6 +407,8 @@ class ChatMessage {
     this.matchedNotes = const [],
     this.aiOnline = true,
     this.isVaultResult = false,
+    this.ragUsed = false,
+    this.ragSources = const [],
   });
 }
 
@@ -351,6 +419,8 @@ class ChatResponse {
   final List<Note> matchedNotes;
   final bool aiOnline;
   final bool isVaultResult;
+  final bool ragUsed;
+  final List<String> ragSources;
 
   const ChatResponse({
     required this.text,
@@ -358,5 +428,7 @@ class ChatResponse {
     this.matchedNotes = const [],
     this.aiOnline = true,
     this.isVaultResult = false,
+    this.ragUsed = false,
+    this.ragSources = const [],
   });
 }

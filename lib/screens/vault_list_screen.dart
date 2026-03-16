@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/auth_provider.dart';
+import '../providers/embedding_provider.dart';
 import '../providers/vault_provider.dart';
 import '../widgets/vault_entry_tile.dart';
 import 'entry_form_screen.dart';
@@ -130,9 +131,10 @@ class _VaultListScreenState extends ConsumerState<VaultListScreen> {
                           builder: (_) => EntryFormScreen(entry: entry),
                         ),
                       ),
-                      onDelete: () => ref
-                          .read(vaultActionsProvider)
-                          .deleteEntry(entry.id),
+                      onDelete: () {
+                        ref.read(vaultActionsProvider).deleteEntry(entry.id);
+                        ref.read(embeddingIndexProvider.notifier).removeEntry(entry.id);
+                      },
                     );
                   },
                 );

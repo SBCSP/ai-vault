@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/note.dart';
 import '../providers/auth_provider.dart';
+import '../providers/embedding_provider.dart';
 import '../providers/notes_provider.dart';
 
 class NoteFormScreen extends ConsumerStatefulWidget {
@@ -151,6 +152,9 @@ class _NoteFormScreenState extends ConsumerState<NoteFormScreen> {
     } else {
       await actions.addNote(note);
     }
+
+    // Fire-and-forget: update embedding index
+    ref.read(embeddingIndexProvider.notifier).indexNote(note);
 
     if (mounted) Navigator.pop(context);
   }

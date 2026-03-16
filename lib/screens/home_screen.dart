@@ -5,10 +5,13 @@ import '../models/note.dart';
 import '../models/vault_entry.dart';
 import '../providers/ai_provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/documents_provider.dart';
 import '../providers/notes_provider.dart';
 import '../providers/vault_provider.dart';
 import '../services/ai_service.dart';
 import '../widgets/ai_search_bar.dart';
+import 'document_form_screen.dart';
+import 'documents_list_screen.dart';
 import 'entry_form_screen.dart';
 import 'note_form_screen.dart';
 import 'notes_list_screen.dart';
@@ -33,6 +36,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   Widget build(BuildContext context) {
     final entriesAsync = ref.watch(vaultEntriesProvider);
     final notesAsync = ref.watch(notesProvider);
+    final docsAsync = ref.watch(documentsProvider);
     final aiService = ref.watch(aiServiceProvider);
 
     return Scaffold(
@@ -60,6 +64,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             error: (e, _) => Center(child: Text('Error: $e')),
             data: (entries) {
               final notes = notesAsync.valueOrNull ?? [];
+              final docCount = docsAsync.valueOrNull?.length ?? 0;
               return SingleChildScrollView(
                 padding: const EdgeInsets.all(16),
                 child: Center(
@@ -76,6 +81,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                         _StatsRow(
                           entries: entries,
                           notes: notes,
+                          documentCount: docCount,
                           aiService: aiService,
                         ),
                         const SizedBox(height: 24),
@@ -143,6 +149,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 context,
                 MaterialPageRoute(
                     builder: (_) => const NoteFormScreen()),
+              );
+            },
+            theme: theme,
+          ),
+          const SizedBox(height: 12),
+          _SpeedDialItem(
+            icon: Icons.description,
+            label: 'Add Document',
+            onTap: () {
+              setState(() => _fabOpen = false);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => const DocumentFormScreen()),
               );
             },
             theme: theme,
@@ -217,11 +237,13 @@ class _SpeedDialItem extends StatelessWidget {
 class _StatsRow extends StatefulWidget {
   final List<VaultEntry> entries;
   final List<Note> notes;
+  final int documentCount;
   final dynamic aiService;
 
   const _StatsRow({
     required this.entries,
     required this.notes,
+    required this.documentCount,
     required this.aiService,
   });
 
@@ -271,14 +293,14 @@ class _StatsRowState extends State<_StatsRow> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final crossAxisCount = constraints.maxWidth > 600 ? 5 : 2;
+        final crossAxisCount = constraints.maxWidth > 600 ? 3 : 2;
         return GridView.count(
           crossAxisCount: crossAxisCount,
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           mainAxisSpacing: 12,
           crossAxisSpacing: 12,
-          childAspectRatio: constraints.maxWidth > 600 ? 1.1 : 1.3,
+          childAspectRatio: constraints.maxWidth > 600 ? 2.2 : 1.3,
           children: [
             _DashboardCard(
               icon: Icons.shield,
@@ -298,6 +320,17 @@ class _StatsRowState extends State<_StatsRow> {
               onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => const NotesListScreen()),
+              ),
+            ),
+            _DashboardCard(
+              icon: Icons.description,
+              iconColor: Colors.deepPurple,
+              label: 'Documents',
+              value: '${widget.documentCount}',
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => const DocumentsListScreen()),
               ),
             ),
             _DashboardCard(
@@ -385,7 +418,7 @@ class _DashboardCard extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Icon(icon, color: iconColor, size: 24),
+                  Icon(icon, color: iconColor, size: 20),
                   if (onTap != null)
                     Icon(
                       Icons.arrow_forward_ios,
@@ -397,7 +430,7 @@ class _DashboardCard extends StatelessWidget {
               const Spacer(),
               Text(
                 value,
-                style: theme.textTheme.headlineSmall?.copyWith(
+                style: theme.textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.bold,
                 ),
                 maxLines: 1,

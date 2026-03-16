@@ -1,11 +1,15 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../database/database.dart' as db;
 import '../models/note.dart';
 import '../models/vault_entry.dart';
 import '../services/ai_service.dart';
+import '../services/embedding_service.dart';
+import 'embedding_provider.dart';
 import 'notes_provider.dart';
 import 'vault_provider.dart';
 
@@ -113,11 +117,100 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
           .where((m) => m != userMessage)
           .toList();
 
+      // --- RAG pipeline: embed query and find top-K relevant items ---
+      List<VaultEntry>? ragEntries;
+      List<Note>? ragNotes;
+      List<db.DocumentChunk>? ragChunks;
+      List<String> ragDocumentTitles = [];
+      bool ragUsed = false;
+
+      try {
+        final embeddingService = _ref.read(embeddingServiceProvider);
+        final database = _ref.read(databaseProvider);
+
+        final queryVector =
+            await embeddingService.generateEmbedding(query);
+
+        if (queryVector != null) {
+          final allEmbeddings = await database.getAllEmbeddings();
+
+          if (allEmbeddings.isNotEmpty) {
+            // Score each embedding against the query
+            final scored = <({String sourceId, String sourceType, double score})>[];
+            for (final emb in allEmbeddings) {
+              final vector = (jsonDecode(emb.embedding) as List<dynamic>)
+                  .map((e) => (e as num).toDouble())
+                  .toList();
+              final score =
+                  EmbeddingService.cosineSimilarity(queryVector, vector);
+              scored.add((
+                sourceId: emb.sourceId,
+                sourceType: emb.sourceType,
+                score: score,
+              ));
+            }
+
+            // Sort by score descending, filter by minimum threshold, take top 10
+            scored.sort((a, b) => b.score.compareTo(a.score));
+            final topK = scored
+                .where((s) => s.score >= 0.3)
+                .take(10)
+                .toList();
+
+            if (topK.isNotEmpty) {
+              ragUsed = true;
+
+              final entryIds = topK
+                  .where((s) => s.sourceType == 'vault_entry')
+                  .map((s) => s.sourceId)
+                  .toSet();
+              final noteIds = topK
+                  .where((s) => s.sourceType == 'note')
+                  .map((s) => s.sourceId)
+                  .toSet();
+              final chunkIds = topK
+                  .where((s) => s.sourceType == 'document_chunk')
+                  .map((s) => s.sourceId)
+                  .toSet();
+
+              // Always set RAG-filtered lists (even if empty) so
+              // we don't fall back to sending the entire vault
+              ragEntries =
+                  entries.where((e) => entryIds.contains(e.id)).toList();
+              ragNotes =
+                  notesList.where((n) => noteIds.contains(n.id)).toList();
+
+              if (chunkIds.isNotEmpty) {
+                ragChunks =
+                    await database.getChunksByIds(chunkIds.toList());
+                // Fetch document titles for matched chunks
+                final docIds = ragChunks
+                    .map((c) => c.documentId)
+                    .toSet();
+                for (final docId in docIds) {
+                  final doc = await database.getDocumentById(docId);
+                  if (doc != null) {
+                    ragDocumentTitles.add(doc.title);
+                  }
+                }
+              }
+            }
+          }
+        }
+      } catch (_) {
+        // RAG failed — fall back to full context silently
+      }
+
       final response = await aiService.chat(
         query,
         history,
         entries,
         notesList,
+        ragEntries: ragEntries,
+        ragNotes: ragNotes,
+        ragChunks: ragChunks,
+        ragDocumentTitles: ragDocumentTitles,
+        ragUsed: ragUsed,
       );
 
       if (!mounted) return;
@@ -129,6 +222,8 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
         matchedNotes: response.matchedNotes,
         aiOnline: response.aiOnline,
         isVaultResult: response.isVaultResult,
+        ragUsed: response.ragUsed,
+        ragSources: response.ragSources,
       );
 
       state = state.copyWith(

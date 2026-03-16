@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/vault_entry.dart';
 import '../providers/auth_provider.dart';
 import '../providers/category_provider.dart';
+import '../providers/embedding_provider.dart';
 import '../providers/vault_provider.dart';
 
 class EntryFormScreen extends ConsumerStatefulWidget {
@@ -350,6 +351,9 @@ class _EntryFormScreenState extends ConsumerState<EntryFormScreen> {
     } else {
       await actions.addEntry(entry);
     }
+
+    // Fire-and-forget: update embedding index
+    ref.read(embeddingIndexProvider.notifier).indexEntry(entry);
 
     if (mounted) Navigator.pop(context);
   }

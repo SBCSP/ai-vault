@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/note.dart';
 import '../providers/auth_provider.dart';
+import '../providers/embedding_provider.dart';
 import '../providers/notes_provider.dart';
 import 'note_form_screen.dart';
 
@@ -172,6 +173,7 @@ class _NotesListScreenState extends ConsumerState<NotesListScreen> {
             onPressed: () {
               Navigator.pop(ctx);
               ref.read(noteActionsProvider).deleteNote(note.id);
+              ref.read(embeddingIndexProvider.notifier).removeNote(note.id);
             },
             child: const Text('Delete'),
           ),

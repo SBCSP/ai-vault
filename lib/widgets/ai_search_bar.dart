@@ -316,7 +316,15 @@ class _ChatBubble extends StatelessWidget {
               children: [
                 MarkdownResponse(data: message.text),
                 const SizedBox(height: 4),
-                _AiStatusBadge(aiOnline: message.aiOnline),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: [
+                    _AiStatusBadge(aiOnline: message.aiOnline),
+                    if (message.ragUsed)
+                      _RagSourceBadge(sources: message.ragSources),
+                  ],
+                ),
               ],
             ),
           ),
@@ -389,6 +397,54 @@ class _AiStatusBadge extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _RagSourceBadge extends StatelessWidget {
+  final List<String> sources;
+
+  const _RagSourceBadge({required this.sources});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final text = sources.isNotEmpty
+        ? 'RAG: ${sources.join(', ')}'
+        : 'RAG search';
+    return Tooltip(
+      message:
+          'Retrieval-Augmented Generation was used to find relevant context',
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color: Colors.deepPurple,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.hub,
+              size: 10,
+              color: Colors.white,
+            ),
+            const SizedBox(width: 3),
+            Flexible(
+              child: Text(
+                text,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w500,
+                  fontSize: 10,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
