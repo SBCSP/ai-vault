@@ -1,5 +1,7 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as p;
 
 import '../models/document.dart';
 import '../providers/auth_provider.dart';
@@ -19,6 +21,7 @@ class DocumentsListScreen extends ConsumerStatefulWidget {
 class _DocumentsListScreenState extends ConsumerState<DocumentsListScreen> {
   String _textFilter = '';
   final _searchController = TextEditingController();
+  bool _fabOpen = false;
 
   @override
   void dispose() {
@@ -42,37 +45,39 @@ class _DocumentsListScreenState extends ConsumerState<DocumentsListScreen> {
           ),
         ],
       ),
-      body: Column(
+      body: Stack(
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-            child: TextField(
-              controller: _searchController,
-              onChanged: (value) => setState(() => _textFilter = value),
-              decoration: InputDecoration(
-                hintText: 'Filter documents...',
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon: _textFilter.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear),
-                        onPressed: () {
-                          _searchController.clear();
-                          setState(() => _textFilter = '');
-                        },
-                      )
-                    : null,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
+          Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+                child: TextField(
+                  controller: _searchController,
+                  onChanged: (value) => setState(() => _textFilter = value),
+                  decoration: InputDecoration(
+                    hintText: 'Filter documents...',
+                    prefixIcon: const Icon(Icons.search),
+                    suffixIcon: _textFilter.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear),
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() => _textFilter = '');
+                            },
+                          )
+                        : null,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    filled: true,
+                    fillColor: theme.colorScheme.surfaceContainerHighest
+                        .withValues(alpha: 0.5),
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 16),
+                  ),
                 ),
-                filled: true,
-                fillColor: theme.colorScheme.surfaceContainerHighest
-                    .withValues(alpha: 0.5),
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 16),
               ),
-            ),
-          ),
-          Expanded(
+              Expanded(
             child: docsAsync.when(
               loading: () =>
                   const Center(child: CircularProgressIndicator()),
@@ -143,15 +148,63 @@ class _DocumentsListScreenState extends ConsumerState<DocumentsListScreen> {
               },
             ),
           ),
+            ],
+          ),
+          if (_fabOpen)
+            Positioned.fill(
+              child: GestureDetector(
+                onTap: () => setState(() => _fabOpen = false),
+                child: Container(color: Colors.black54),
+              ),
+            ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const DocumentFormScreen()),
+      floatingActionButton: _buildSpeedDial(context),
+    );
+  }
+
+  Widget _buildSpeedDial(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        if (_fabOpen) ...[
+          _SpeedDialItem(
+            icon: Icons.insert_drive_file,
+            label: 'Add Document',
+            onTap: () {
+              setState(() => _fabOpen = false);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => const DocumentFormScreen()),
+              );
+            },
+            theme: theme,
+          ),
+          const SizedBox(height: 12),
+          _SpeedDialItem(
+            icon: Icons.folder_open,
+            label: 'Map Directory',
+            onTap: () {
+              setState(() => _fabOpen = false);
+              _pickAndImportDirectory();
+            },
+            theme: theme,
+          ),
+          const SizedBox(height: 16),
+        ],
+        FloatingActionButton(
+          onPressed: () => setState(() => _fabOpen = !_fabOpen),
+          child: AnimatedRotation(
+            turns: _fabOpen ? 0.125 : 0,
+            duration: const Duration(milliseconds: 200),
+            child: const Icon(Icons.add, size: 28),
+          ),
         ),
-        child: const Icon(Icons.add),
-      ),
+      ],
     );
   }
 
@@ -198,6 +251,408 @@ class _DocumentsListScreenState extends ConsumerState<DocumentsListScreen> {
         SnackBar(content: Text('"${doc.title}" re-indexed')),
       );
     }
+  }
+
+  Future<void> _pickAndImportDirectory() async {
+    final dirPath = await FilePicker.platform.getDirectoryPath(
+      dialogTitle: 'Select directory to map',
+    );
+
+    if (dirPath == null || !mounted) return;
+
+    // Show scanning indicator
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const SizedBox(
+              width: 16, height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+            ),
+            const SizedBox(width: 12),
+            Text('Scanning ${p.basename(dirPath)}...'),
+          ],
+        ),
+        duration: const Duration(seconds: 30),
+      ),
+    );
+
+    // Scan directory
+    final scanResult = await DocumentService.scanDirectory(dirPath);
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
+    if (scanResult.supportedFiles.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'No supported files found in ${p.basename(dirPath)}.\n'
+            '${scanResult.skippedCount} files skipped.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    // Show confirmation dialog with scan results
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => _DirectoryImportDialog(
+        dirPath: dirPath,
+        scanResult: scanResult,
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    // Get existing file paths to avoid duplicates
+    final existingDocs = ref.read(documentsProvider).valueOrNull ?? [];
+    final existingPaths = existingDocs.map((d) => d.filePath).toSet();
+
+    // Import files
+    final actions = ref.read(documentActionsProvider);
+    final embeddingNotifier = ref.read(embeddingIndexProvider.notifier);
+    var indexed = 0;
+    var duplicates = 0;
+    var errors = 0;
+
+    // Show progress dialog
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => _DirectoryProgressDialog(
+        totalFiles: scanResult.supportedFiles.length,
+        dirName: p.basename(dirPath),
+      ),
+    );
+
+    for (final file in scanResult.supportedFiles) {
+      if (!mounted) break;
+
+      // Skip duplicates
+      if (existingPaths.contains(file.path)) {
+        duplicates++;
+        // Update progress
+        _updateProgressDialog(indexed + duplicates + errors,
+            scanResult.supportedFiles.length);
+        continue;
+      }
+
+      try {
+        final fileName = p.basename(file.path);
+        final dotIndex = fileName.lastIndexOf('.');
+        final title = dotIndex > 0 ? fileName.substring(0, dotIndex) : fileName;
+        final fileType = DocumentService.detectFileType(file.path);
+
+        final doc = Document(
+          id: '',
+          title: title,
+          filePath: file.path,
+          fileType: fileType,
+          tags: 'dir:${p.basename(dirPath)}',
+          createdAt: DateTime.now(),
+          updatedAt: DateTime.now(),
+        );
+
+        final docId = await actions.addDocument(doc);
+        final docWithId = doc.copyWith(id: docId);
+        await embeddingNotifier.indexDocument(docWithId);
+
+        indexed++;
+        existingPaths.add(file.path);
+      } catch (_) {
+        errors++;
+      }
+
+      _updateProgressDialog(indexed + duplicates + errors,
+          scanResult.supportedFiles.length);
+    }
+
+    // Dismiss progress dialog
+    if (mounted) {
+      Navigator.of(context, rootNavigator: true).pop();
+    }
+
+    // Show results
+    if (mounted) {
+      final resultParts = <String>[];
+      resultParts.add('$indexed indexed');
+      if (duplicates > 0) resultParts.add('$duplicates already existed');
+      if (errors > 0) resultParts.add('$errors failed');
+      if (scanResult.skippedCount > 0) {
+        resultParts.add('${scanResult.skippedCount} unsupported skipped');
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              Icon(
+                errors > 0 ? Icons.warning_amber : Icons.check_circle,
+                color: Colors.white,
+                size: 18,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '${p.basename(dirPath)}: ${resultParts.join(" \u2022 ")}',
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: errors > 0 ? Colors.orange.shade700 : Colors.green.shade700,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 5),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+    }
+  }
+
+  void _updateProgressDialog(int current, int total) {
+    // The progress dialog rebuilds via its own state
+    _progressNotifier.value = current;
+  }
+
+  final ValueNotifier<int> _progressNotifier = ValueNotifier<int>(0);
+}
+
+/// Speed dial menu item for documents screen
+class _SpeedDialItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final ThemeData theme;
+
+  const _SpeedDialItem({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    required this.theme,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.15),
+                blurRadius: 4,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Text(
+            label,
+            style: theme.textTheme.labelLarge?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        FloatingActionButton.small(
+          heroTag: label,
+          onPressed: onTap,
+          child: Icon(icon),
+        ),
+      ],
+    );
+  }
+}
+
+/// Dialog showing directory scan results and asking for confirmation
+class _DirectoryImportDialog extends StatelessWidget {
+  final String dirPath;
+  final DirectoryScanResult scanResult;
+
+  const _DirectoryImportDialog({
+    required this.dirPath,
+    required this.scanResult,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    // Group supported files by extension
+    final extCounts = <String, int>{};
+    for (final file in scanResult.supportedFiles) {
+      final ext = p.extension(file.path).toLowerCase();
+      extCounts[ext] = (extCounts[ext] ?? 0) + 1;
+    }
+
+    return AlertDialog(
+      icon: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.deepPurple.withValues(alpha: 0.1),
+          shape: BoxShape.circle,
+        ),
+        child: const Icon(
+          Icons.folder_open,
+          color: Colors.deepPurple,
+          size: 32,
+        ),
+      ),
+      title: const Text('Map Directory'),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 400),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceContainerHighest
+                    .withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.folder, size: 18,
+                      color: theme.colorScheme.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      dirPath,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontFamily: 'monospace',
+                        fontSize: 11,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              '${scanResult.supportedFiles.length} supported files found:',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: extCounts.entries.map((e) {
+                return Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primaryContainer,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    '${e.key} (${e.value})',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: theme.colorScheme.onPrimaryContainer,
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+            if (scanResult.skippedCount > 0) ...[
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Icon(Icons.info_outline, size: 14,
+                      color: theme.colorScheme.onSurfaceVariant),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      '${scanResult.skippedCount} unsupported files will be skipped'
+                      '${scanResult.skippedExtensions.isNotEmpty ? ' (${scanResult.skippedExtensions.take(5).join(", ")})' : ''}',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            const SizedBox(height: 12),
+            Text(
+              'Each file will be chunked and indexed for AI retrieval. '
+              'Duplicate files already in your library will be skipped.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton.icon(
+          onPressed: () => Navigator.pop(context, true),
+          icon: const Icon(Icons.download, size: 18),
+          label: Text('Index ${scanResult.supportedFiles.length} Files'),
+        ),
+      ],
+    );
+  }
+}
+
+/// Progress dialog shown during directory import
+class _DirectoryProgressDialog extends StatefulWidget {
+  final int totalFiles;
+  final String dirName;
+
+  const _DirectoryProgressDialog({
+    required this.totalFiles,
+    required this.dirName,
+  });
+
+  @override
+  State<_DirectoryProgressDialog> createState() =>
+      _DirectoryProgressDialogState();
+}
+
+class _DirectoryProgressDialogState extends State<_DirectoryProgressDialog> {
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return AlertDialog(
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const CircularProgressIndicator(),
+          const SizedBox(height: 16),
+          Text(
+            'Indexing ${widget.dirName}...',
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Processing ${widget.totalFiles} files.\nThis may take a while for large directories.',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
