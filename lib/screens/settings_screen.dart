@@ -6,6 +6,7 @@ import '../providers/ai_provider.dart';
 import '../providers/api_server_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/category_provider.dart';
+import '../providers/lock_timeout_provider.dart';
 import 'ollama_screen.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -90,9 +91,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
+                const _LockTimeoutCard(),
+                const SizedBox(height: 16),
                 _CategoriesCard(),
                 const SizedBox(height: 16),
-                const _SecretsApiCard(),
+                const _VaultApiCard(),
                 const SizedBox(height: 16),
                 Card(
                   child: Padding(
@@ -145,6 +148,139 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LockTimeoutCard extends ConsumerWidget {
+  const _LockTimeoutCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final currentTimeout = ref.watch(lockTimeoutProvider);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.timer, color: theme.colorScheme.primary),
+                const SizedBox(width: 8),
+                Text(
+                  'Vault Lock Timeout',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Automatically lock the vault after a period of inactivity.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 12),
+            ...LockTimeout.values.map((timeout) {
+              final isSelected = currentTimeout == timeout;
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Material(
+                  color: isSelected
+                      ? theme.colorScheme.primaryContainer
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(12),
+                  child: InkWell(
+                    onTap: () => ref
+                        .read(lockTimeoutProvider.notifier)
+                        .setTimeout(timeout),
+                    borderRadius: BorderRadius.circular(12),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 10),
+                      child: Row(
+                        children: [
+                          Icon(
+                            isSelected
+                                ? Icons.radio_button_checked
+                                : Icons.radio_button_off,
+                            size: 20,
+                            color: isSelected
+                                ? theme.colorScheme.primary
+                                : theme.colorScheme.onSurfaceVariant,
+                          ),
+                          const SizedBox(width: 12),
+                          Text(
+                            timeout.label,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontWeight: isSelected
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? theme.colorScheme.primary
+                                      .withValues(alpha: 0.15)
+                                  : theme.colorScheme.surfaceContainerHighest,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              timeout.subtitle,
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                fontWeight: FontWeight.w600,
+                                color: isSelected
+                                    ? theme.colorScheme.primary
+                                    : theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                          if (timeout == LockTimeout.never) ...[
+                            const Spacer(),
+                            Icon(
+                              Icons.warning_amber,
+                              size: 16,
+                              color: Colors.orange.shade700,
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }),
+            if (currentTimeout == LockTimeout.never)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline,
+                        size: 14, color: Colors.orange.shade700),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        'Auto-lock is disabled. Your vault will stay unlocked until you manually lock it.',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: Colors.orange.shade700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
         ),
       ),
     );
@@ -292,14 +428,14 @@ class _CategoriesCard extends ConsumerWidget {
   }
 }
 
-class _SecretsApiCard extends ConsumerStatefulWidget {
-  const _SecretsApiCard();
+class _VaultApiCard extends ConsumerStatefulWidget {
+  const _VaultApiCard();
 
   @override
-  ConsumerState<_SecretsApiCard> createState() => _SecretsApiCardState();
+  ConsumerState<_VaultApiCard> createState() => _VaultApiCardState();
 }
 
-class _SecretsApiCardState extends ConsumerState<_SecretsApiCard> {
+class _VaultApiCardState extends ConsumerState<_VaultApiCard> {
   final _portController = TextEditingController();
   bool _keyVisible = false;
 
@@ -315,9 +451,9 @@ class _SecretsApiCardState extends ConsumerState<_SecretsApiCard> {
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('Disable Secrets API?'),
+          title: const Text('Disable Vault API?'),
           content: const Text(
-            'Disabling the Secrets API will invalidate the current API key. '
+            'Disabling the Vault API will invalidate the current API key. '
             'A new key will be generated when re-enabled. Any applications '
             'using the current key will need to be updated.',
           ),
@@ -361,9 +497,33 @@ class _SecretsApiCardState extends ConsumerState<_SecretsApiCard> {
                     Icon(Icons.api, color: theme.colorScheme.primary),
                     const SizedBox(width: 8),
                     Text(
-                      'Secrets API',
+                      'Vault API',
                       style: theme.textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.green.shade700,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.lock, size: 10, color: Colors.white),
+                          SizedBox(width: 3),
+                          Text(
+                            'HTTPS',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
@@ -376,12 +536,18 @@ class _SecretsApiCardState extends ConsumerState<_SecretsApiCard> {
             ),
             const SizedBox(height: 4),
             Text(
-              'Expose a local REST API so other apps on this machine '
-              'can retrieve your secrets programmatically.',
+              'Expose a secure local REST API so other apps on this machine '
+              'can access your vault programmatically. All traffic is '
+              'encrypted with a self-signed TLS certificate.',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
+
+            // TLS Certificate section (always visible)
+            const SizedBox(height: 12),
+            _buildCertificateSection(theme, apiState),
+
             if (apiState.enabled) ...[
               const SizedBox(height: 12),
               // Status indicator
@@ -408,7 +574,7 @@ class _SecretsApiCardState extends ConsumerState<_SecretsApiCard> {
                   const SizedBox(width: 8),
                   Text(
                     apiState.isRunning
-                        ? 'Running on localhost:${apiState.port}'
+                        ? 'Running on https://localhost:${apiState.port}'
                         : 'Stopped',
                     style: theme.textTheme.bodyMedium?.copyWith(
                       fontWeight: FontWeight.w600,
@@ -539,6 +705,8 @@ class _SecretsApiCardState extends ConsumerState<_SecretsApiCard> {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: SelectableText(
+                  '# Base URL\n'
+                  'https://localhost:${apiState.port}\n\n'
                   '# Auth: Bearer token or query param\n'
                   'Authorization: Bearer <api_key>\n'
                   '   — or —\n'
@@ -548,7 +716,10 @@ class _SecretsApiCardState extends ConsumerState<_SecretsApiCard> {
                   'GET /api/secrets/:id\n'
                   'GET /api/secrets?title=github\n'
                   'GET /api/notes\n'
-                  'GET /api/notes/:id',
+                  'GET /api/notes/:id\n\n'
+                  '# Example (self-signed cert)\n'
+                  'curl -k https://localhost:${apiState.port}/api/health \\\n'
+                  '  -H "Authorization: Bearer <key>"',
                   style: theme.textTheme.bodySmall?.copyWith(
                     fontFamily: 'monospace',
                     height: 1.6,
@@ -559,17 +730,17 @@ class _SecretsApiCardState extends ConsumerState<_SecretsApiCard> {
               Row(
                 children: [
                   Icon(
-                    Icons.warning_amber,
+                    Icons.info_outline,
                     size: 14,
-                    color: theme.colorScheme.error,
+                    color: theme.colorScheme.primary,
                   ),
                   const SizedBox(width: 4),
                   Expanded(
                     child: Text(
-                      'Only accessible from localhost. Secrets are returned '
-                      'in plaintext to authorized local requests.',
+                      'HTTPS only — localhost access. Use -k or --insecure '
+                      'flag with curl for the self-signed certificate.',
                       style: theme.textTheme.labelSmall?.copyWith(
-                        color: theme.colorScheme.error,
+                        color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
                   ),
@@ -578,6 +749,96 @@ class _SecretsApiCardState extends ConsumerState<_SecretsApiCard> {
             ],
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildCertificateSection(ThemeData theme, ApiServerState apiState) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: apiState.certReady
+            ? Colors.green.withValues(alpha: 0.08)
+            : Colors.orange.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: apiState.certReady
+              ? Colors.green.withValues(alpha: 0.3)
+              : Colors.orange.withValues(alpha: 0.3),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                apiState.certReady
+                    ? Icons.verified_user
+                    : Icons.warning_amber,
+                size: 16,
+                color: apiState.certReady ? Colors.green : Colors.orange,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                'TLS Certificate',
+                style: theme.textTheme.labelLarge?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const Spacer(),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: apiState.certReady
+                      ? Colors.green.withValues(alpha: 0.15)
+                      : Colors.orange.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  apiState.certReady ? 'Valid' : 'Not Ready',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color:
+                        apiState.certReady ? Colors.green : Colors.orange,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (apiState.certReady && apiState.certInfo.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            if (apiState.certInfo['expires'] != null)
+              Text(
+                'Expires: ${apiState.certInfo['expires']}',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  fontFamily: 'monospace',
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            if (apiState.certInfo['fingerprint'] != null)
+              Text(
+                'SHA-1: ${apiState.certInfo['fingerprint']}',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  fontFamily: 'monospace',
+                  fontSize: 9,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+          ],
+          if (!apiState.certReady) ...[
+            const SizedBox(height: 4),
+            Text(
+              'Certificate generation failed. Please restart the app.',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: Colors.orange,
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }

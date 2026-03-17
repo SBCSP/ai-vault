@@ -420,7 +420,7 @@ class _OllamaScreenState extends ConsumerState<OllamaScreen> {
             ),
             const SizedBox(height: 12),
             Text(
-              'This is the model AI Vault uses for search and conversation.',
+              'This is the model AI VaultIO uses for search and conversation.',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),

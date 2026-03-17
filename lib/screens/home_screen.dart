@@ -5,6 +5,7 @@ import '../models/note.dart';
 import '../models/vault_entry.dart';
 import '../providers/ai_provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/chat_history_provider.dart';
 import '../providers/documents_provider.dart';
 import '../providers/notes_provider.dart';
 import '../providers/vault_provider.dart';
@@ -18,6 +19,7 @@ import 'notes_list_screen.dart';
 import 'ollama_screen.dart';
 import 'settings_screen.dart';
 import 'categories_screen.dart';
+import 'chat_history_screen.dart';
 import 'expired_secrets_screen.dart';
 import 'vault_list_screen.dart';
 
@@ -37,11 +39,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     final entriesAsync = ref.watch(vaultEntriesProvider);
     final notesAsync = ref.watch(notesProvider);
     final docsAsync = ref.watch(documentsProvider);
+    final chatsAsync = ref.watch(chatSessionsProvider);
     final aiService = ref.watch(aiServiceProvider);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('AI Vault'),
+        title: const Text('AI VaultIO'),
         actions: [
           IconButton(
             icon: const Icon(Icons.settings),
@@ -65,6 +68,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             data: (entries) {
               final notes = notesAsync.valueOrNull ?? [];
               final docCount = docsAsync.valueOrNull?.length ?? 0;
+              final chatCount = chatsAsync.valueOrNull?.length ?? 0;
               return SingleChildScrollView(
                 padding: const EdgeInsets.all(16),
                 child: Center(
@@ -82,6 +86,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                           entries: entries,
                           notes: notes,
                           documentCount: docCount,
+                          chatCount: chatCount,
                           aiService: aiService,
                         ),
                         const SizedBox(height: 24),
@@ -238,12 +243,14 @@ class _StatsRow extends StatefulWidget {
   final List<VaultEntry> entries;
   final List<Note> notes;
   final int documentCount;
+  final int chatCount;
   final dynamic aiService;
 
   const _StatsRow({
     required this.entries,
     required this.notes,
     required this.documentCount,
+    required this.chatCount,
     required this.aiService,
   });
 
@@ -331,6 +338,17 @@ class _StatsRowState extends State<_StatsRow> {
                 context,
                 MaterialPageRoute(
                     builder: (_) => const DocumentsListScreen()),
+              ),
+            ),
+            _DashboardCard(
+              icon: Icons.chat_bubble_outline,
+              iconColor: Colors.cyan.shade700,
+              label: 'Chats',
+              value: '${widget.chatCount}',
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => const ChatHistoryScreen()),
               ),
             ),
             _DashboardCard(

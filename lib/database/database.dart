@@ -78,15 +78,34 @@ class DocumentChunks extends Table {
   Set<Column> get primaryKey => {id};
 }
 
-@DriftDatabase(
-    tables: [VaultEntries, Notes, Embeddings, Documents, DocumentChunks])
+class ChatSessions extends Table {
+  TextColumn get id => text()();
+  TextColumn get title => text()();
+  TextColumn get messages => text()(); // JSON-encoded List<Map>
+  BoolColumn get isIndexed =>
+      boolean().withDefault(const Constant(false))();
+  DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get updatedAt => dateTime()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+@DriftDatabase(tables: [
+  VaultEntries,
+  Notes,
+  Embeddings,
+  Documents,
+  DocumentChunks,
+  ChatSessions,
+])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(openConnection());
 
   AppDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -96,7 +115,6 @@ class AppDatabase extends _$AppDatabase {
           }
           if (from < 3) {
             await migrator.createTable(notes);
-            // Migrate existing Note entries from vault_entries to notes
             await _migrateNotesToNewTable();
           }
           if (from < 4) {
@@ -105,6 +123,9 @@ class AppDatabase extends _$AppDatabase {
           if (from < 5) {
             await migrator.createTable(documents);
             await migrator.createTable(documentChunks);
+          }
+          if (from < 6) {
+            await migrator.createTable(chatSessions);
           }
         },
       );
@@ -227,4 +248,27 @@ class AppDatabase extends _$AppDatabase {
 
   Future<List<DocumentChunk>> getChunksByIds(List<String> ids) =>
       (select(documentChunks)..where((t) => t.id.isIn(ids))).get();
+
+  // --- Chat Sessions ---
+  Stream<List<ChatSession>> watchAllChatSessions() =>
+      (select(chatSessions)
+            ..orderBy([(t) => OrderingTerm.desc(t.updatedAt)]))
+          .watch();
+
+  Future<ChatSession?> getChatSessionById(String id) =>
+      (select(chatSessions)..where((t) => t.id.equals(id)))
+          .getSingleOrNull();
+
+  Future<void> insertChatSession(ChatSessionsCompanion session) =>
+      into(chatSessions).insert(session);
+
+  Future<void> updateChatSession(ChatSessionsCompanion session) =>
+      (update(chatSessions)..where((t) => t.id.equals(session.id.value)))
+          .write(session);
+
+  Future<void> deleteChatSession(String id) =>
+      (delete(chatSessions)..where((t) => t.id.equals(id))).go();
+
+  Future<List<ChatSession>> getIndexedChatSessions() =>
+      (select(chatSessions)..where((t) => t.isIndexed.equals(true))).get();
 }

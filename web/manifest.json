@@ -1,6 +1,6 @@
 {
-    "name": "ai_vault",
-    "short_name": "ai_vault",
+    "name": "AI VaultIO",
+    "short_name": "AI VaultIO",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

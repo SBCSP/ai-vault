@@ -95,6 +95,22 @@ class EmbeddingService {
     return 'Document: $documentTitle\n\n$chunkContent';
   }
 
+  /// Build embeddable text for a chat session.
+  /// Combines user and assistant messages into a coherent narrative.
+  static String buildChatSessionText(
+    String title,
+    List<Map<String, dynamic>> messages,
+  ) {
+    final buf = StringBuffer('Chat Session: $title\n\n');
+    for (final msg in messages) {
+      final role = msg['isUser'] == true ? 'User' : 'Assistant';
+      buf.writeln('$role: ${msg['text']}');
+    }
+    final text = buf.toString();
+    // Keep the most recent content if over 2000 chars
+    return text.length > 2000 ? text.substring(text.length - 2000) : text;
+  }
+
   /// SHA-256 hash of text content to detect changes.
   static String computeContentHash(String text) {
     final digest = SHA256Digest();

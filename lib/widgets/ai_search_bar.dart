@@ -2,8 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../models/chat_session.dart';
 import '../models/note.dart';
 import '../providers/ai_provider.dart';
+import '../providers/chat_history_provider.dart';
+import '../providers/embedding_provider.dart';
+import '../screens/chat_history_screen.dart';
 import '../screens/chat_screen.dart';
 import '../services/ai_service.dart';
 import 'markdown_response.dart';
@@ -42,6 +46,174 @@ class _AiChatWidgetState extends ConsumerState<AiChatWidget> {
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeOut,
       );
+    }
+  }
+
+  Future<void> _showSaveDialog() async {
+    final chatState = ref.read(aiChatProvider);
+    if (chatState.messages.isEmpty) return;
+
+    final firstUser = chatState.messages.where((m) => m.isUser).firstOrNull;
+    final autoTitle = firstUser != null
+        ? (firstUser.text.length > 50
+            ? '${firstUser.text.substring(0, 50)}...'
+            : firstUser.text)
+        : 'Chat ${DateTime.now().toString().substring(0, 16)}';
+
+    final titleController = TextEditingController(text: autoTitle);
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.deepPurple.withValues(alpha: 0.1),
+            shape: BoxShape.circle,
+          ),
+          child: const Icon(Icons.shield, color: Colors.deepPurple, size: 32),
+        ),
+        title: const Text('Save & Index Chat'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'This chat will be saved to your history and indexed for AI retrieval.',
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: titleController,
+              decoration: InputDecoration(
+                labelText: 'Chat Title',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                prefixIcon: const Icon(Icons.title),
+              ),
+              autofocus: true,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(ctx, true),
+            icon: const Icon(Icons.shield, size: 18),
+            label: const Text('Save & Index'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      final title = titleController.text.trim().isEmpty
+          ? autoTitle
+          : titleController.text.trim();
+      await _saveAndIndexChat(title);
+    }
+    titleController.dispose();
+  }
+
+  Future<void> _saveAndIndexChat(String title) async {
+    final chatState = ref.read(aiChatProvider);
+    final actions = ref.read(chatSessionActionsProvider);
+
+    final sessionId = await actions.saveSession(title, chatState.messages);
+    await actions.markIndexed(sessionId);
+
+    final now = DateTime.now();
+    final sessionMessages = chatState.messages
+        .map((m) => ChatSessionMessage(
+              text: m.text,
+              isUser: m.isUser,
+              timestamp: now,
+            ))
+        .toList();
+
+    final session = ChatSession(
+      id: sessionId,
+      title: title,
+      messages: sessionMessages,
+      isIndexed: true,
+      createdAt: now,
+      updatedAt: now,
+    );
+
+    await ref.read(embeddingIndexProvider.notifier).indexChatSession(session);
+    ref.read(aiChatProvider.notifier).markSaved(sessionId, title);
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.shield, color: Colors.white, size: 18),
+              const SizedBox(width: 8),
+              Expanded(child: Text('Chat "$title" saved & indexed')),
+            ],
+          ),
+          backgroundColor: Colors.deepPurple,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+    }
+  }
+
+  Future<void> _showNewChatDialog() async {
+    final chatState = ref.read(aiChatProvider);
+
+    if (chatState.messages.isEmpty || chatState.loadedSessionId != null) {
+      ref.read(aiChatProvider.notifier).newChat();
+      return;
+    }
+
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.deepPurple.withValues(alpha: 0.1),
+            shape: BoxShape.circle,
+          ),
+          child: const Icon(Icons.shield, color: Colors.deepPurple, size: 32),
+        ),
+        title: const Text('Save this chat?'),
+        content: const Text(
+          'Would you like to save and index this conversation before starting a new chat?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, 'discard'),
+            child: Text(
+              'Discard',
+              style: TextStyle(color: Theme.of(ctx).colorScheme.error),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, 'cancel'),
+            child: const Text('Cancel'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(ctx, 'save'),
+            icon: const Icon(Icons.shield, size: 18),
+            label: const Text('Save & Index'),
+          ),
+        ],
+      ),
+    );
+
+    if (result == 'save') {
+      await _showSaveDialog();
+      if (mounted) {
+        ref.read(aiChatProvider.notifier).newChat();
+      }
+    } else if (result == 'discard') {
+      ref.read(aiChatProvider.notifier).newChat();
     }
   }
 
@@ -112,6 +284,19 @@ class _AiChatWidgetState extends ConsumerState<AiChatWidget> {
                       onPressed: () => Navigator.push(
                         context,
                         MaterialPageRoute(
+                            builder: (_) => const ChatHistoryScreen()),
+                      ),
+                      icon: const Icon(Icons.history, size: 18),
+                      tooltip: 'Chat History',
+                      visualDensity: VisualDensity.compact,
+                      style: IconButton.styleFrom(
+                        padding: const EdgeInsets.all(6),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
                             builder: (_) => const ChatScreen()),
                       ),
                       icon: const Icon(Icons.open_in_full, size: 18),
@@ -122,8 +307,9 @@ class _AiChatWidgetState extends ConsumerState<AiChatWidget> {
                       ),
                     ),
                     TextButton.icon(
-                      onPressed: () =>
-                          ref.read(aiChatProvider.notifier).newChat(),
+                      onPressed: chatState.messages.isNotEmpty
+                          ? () => _showNewChatDialog()
+                          : null,
                       icon: const Icon(Icons.add, size: 16),
                       label: const Text('New Chat'),
                       style: TextButton.styleFrom(
