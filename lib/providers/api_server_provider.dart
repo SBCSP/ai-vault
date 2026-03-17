@@ -5,6 +5,7 @@ import 'package:uuid/uuid.dart';
 import '../models/note.dart';
 import '../models/vault_entry.dart';
 import '../services/api_server.dart';
+import '../services/certificate_service.dart';
 import 'notes_provider.dart';
 import 'vault_provider.dart';
 
@@ -19,6 +20,8 @@ class ApiServerState {
   final int port;
   final String? error;
   final String? apiKey;
+  final bool certReady;
+  final Map<String, String> certInfo;
 
   const ApiServerState({
     this.enabled = false,
@@ -26,6 +29,8 @@ class ApiServerState {
     this.port = 8484,
     this.error,
     this.apiKey,
+    this.certReady = false,
+    this.certInfo = const {},
   });
 
   ApiServerState copyWith({
@@ -34,6 +39,8 @@ class ApiServerState {
     int? port,
     String? Function()? error,
     String? Function()? apiKey,
+    bool? certReady,
+    Map<String, String>? certInfo,
   }) {
     return ApiServerState(
       enabled: enabled ?? this.enabled,
@@ -41,6 +48,8 @@ class ApiServerState {
       port: port ?? this.port,
       error: error != null ? error() : this.error,
       apiKey: apiKey != null ? apiKey() : this.apiKey,
+      certReady: certReady ?? this.certReady,
+      certInfo: certInfo ?? this.certInfo,
     );
   }
 }
@@ -54,6 +63,11 @@ class ApiServerNotifier extends StateNotifier<ApiServerState> {
   }
 
   Future<void> _loadSettings() async {
+    // Check certificate status on startup
+    final certReady = await CertificateService.ensureCertificate();
+    final certInfo =
+        certReady ? await CertificateService.getCertificateInfo() : <String, String>{};
+
     final prefs = await SharedPreferences.getInstance();
     final enabled = prefs.getBool('api_server_enabled') ?? false;
     final port = prefs.getInt('api_server_port') ?? 8484;
@@ -63,7 +77,17 @@ class ApiServerNotifier extends StateNotifier<ApiServerState> {
       enabled: enabled,
       port: port,
       apiKey: () => apiKey,
+      certReady: certReady,
+      certInfo: certInfo,
     );
+
+    if (!certReady && enabled) {
+      state = state.copyWith(
+        error: () => 'TLS certificate not available. '
+            'Cannot start HTTPS server.',
+      );
+      return;
+    }
 
     if (enabled && apiKey != null) {
       await _startServer(port, apiKey);
@@ -81,6 +105,21 @@ class ApiServerNotifier extends StateNotifier<ApiServerState> {
     await prefs.setBool('api_server_enabled', enabled);
 
     if (enabled) {
+      // Ensure certificate is ready before starting
+      if (!state.certReady) {
+        final certReady = await CertificateService.ensureCertificate();
+        if (!certReady) {
+          state = state.copyWith(
+            enabled: true,
+            error: () => 'Failed to generate TLS certificate. '
+                'Ensure openssl is installed.',
+          );
+          return;
+        }
+        final certInfo = await CertificateService.getCertificateInfo();
+        state = state.copyWith(certReady: true, certInfo: certInfo);
+      }
+
       // Generate a fresh API key
       final newKey = _generateApiKey();
       await prefs.setString('api_server_key', newKey);
@@ -115,6 +154,29 @@ class ApiServerNotifier extends StateNotifier<ApiServerState> {
 
     if (wasRunning || state.enabled) {
       await _startServer(port, state.apiKey);
+    }
+  }
+
+  /// Regenerate the TLS certificate (e.g. if expired or user wants a new one).
+  Future<void> regenerateCertificate() async {
+    final wasRunning = state.isRunning;
+    if (wasRunning) {
+      await _stopServer();
+    }
+
+    // Delete and regenerate
+    final certReady = await CertificateService.ensureCertificate();
+    final certInfo =
+        certReady ? await CertificateService.getCertificateInfo() : <String, String>{};
+
+    state = state.copyWith(
+      certReady: certReady,
+      certInfo: certInfo,
+      error: certReady ? () => null : () => 'Failed to regenerate certificate.',
+    );
+
+    if (wasRunning && certReady) {
+      await _startServer(state.port, state.apiKey);
     }
   }
 

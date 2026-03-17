@@ -3,9 +3,13 @@ import 'dart:io';
 
 import '../models/note.dart';
 import '../models/vault_entry.dart';
+import 'certificate_service.dart';
 
-/// Local HTTP API server that exposes vault secrets and notes to
-/// applications running on the same machine.
+/// Local HTTPS API server that exposes vault data to applications
+/// running on the same machine.
+///
+/// All traffic is encrypted using a self-signed TLS certificate that
+/// AI VaultIO generates and manages automatically.
 ///
 /// Endpoints:
 ///   GET /api/secrets             — List all secrets (no passwords)
@@ -38,13 +42,32 @@ class VaultApiServer {
     _getNotes = getNotes;
   }
 
+  /// Start the HTTPS server with the self-signed certificate.
+  /// Throws if the certificate cannot be loaded.
   Future<void> start({int? port}) async {
     if (_server != null) return; // Already running
     if (port != null) _port = port;
 
-    _server = await HttpServer.bind(
+    // Ensure we have a valid certificate
+    final certReady = await CertificateService.ensureCertificate();
+    if (!certReady) {
+      throw Exception(
+        'Failed to generate TLS certificate. '
+        'Ensure openssl is installed on this system.',
+      );
+    }
+
+    final certPath = await CertificateService.certPath;
+    final keyPath = await CertificateService.keyPath;
+
+    final securityContext = SecurityContext()
+      ..useCertificateChain(certPath)
+      ..usePrivateKey(keyPath);
+
+    _server = await HttpServer.bindSecure(
       InternetAddress.loopbackIPv4,
       _port,
+      securityContext,
     );
 
     _server!.listen(_handleRequest);
@@ -59,8 +82,10 @@ class VaultApiServer {
     // CORS headers for local dev tools
     request.response.headers
       ..set('Content-Type', 'application/json')
-      ..set('Access-Control-Allow-Origin', 'http://localhost:*')
-      ..set('X-Powered-By', 'AI Vault');
+      ..set('Access-Control-Allow-Origin', '*')
+      ..set('X-Powered-By', 'AI VaultIO')
+      ..set('Strict-Transport-Security',
+          'max-age=31536000; includeSubDomains');
 
     if (request.method == 'OPTIONS') {
       request.response.headers
@@ -101,7 +126,11 @@ class VaultApiServer {
 
       switch (segments[1]) {
         case 'health':
-          _sendJson(request, {'status': 'ok', 'vault': 'AI Vault'});
+          _sendJson(request, {
+            'status': 'ok',
+            'vault': 'AI VaultIO',
+            'tls': true,
+          });
           return;
         case 'secrets':
           _handleSecrets(request, segments);

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../database/database.dart' as db;
+import '../models/chat_session.dart';
 import '../models/note.dart';
 import '../models/vault_entry.dart';
 import '../services/ai_service.dart';
@@ -56,22 +57,34 @@ class AiChatState {
   final List<ChatMessage> messages;
   final bool isProcessing;
   final String? error;
+  final String? loadedSessionId;
+  final String? loadedSessionTitle;
 
   const AiChatState({
     this.messages = const [],
     this.isProcessing = false,
     this.error,
+    this.loadedSessionId,
+    this.loadedSessionTitle,
   });
 
   AiChatState copyWith({
     List<ChatMessage>? messages,
     bool? isProcessing,
     String? Function()? error,
+    String? Function()? loadedSessionId,
+    String? Function()? loadedSessionTitle,
   }) {
     return AiChatState(
       messages: messages ?? this.messages,
       isProcessing: isProcessing ?? this.isProcessing,
       error: error != null ? error() : this.error,
+      loadedSessionId: loadedSessionId != null
+          ? loadedSessionId()
+          : this.loadedSessionId,
+      loadedSessionTitle: loadedSessionTitle != null
+          ? loadedSessionTitle()
+          : this.loadedSessionTitle,
     );
   }
 }
@@ -122,6 +135,7 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
       List<Note>? ragNotes;
       List<db.DocumentChunk>? ragChunks;
       List<String> ragDocumentTitles = [];
+      List<ChatSession>? ragChatSessions;
       bool ragUsed = false;
 
       try {
@@ -172,6 +186,10 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
                   .where((s) => s.sourceType == 'document_chunk')
                   .map((s) => s.sourceId)
                   .toSet();
+              final chatSessionIds = topK
+                  .where((s) => s.sourceType == 'chat_session')
+                  .map((s) => s.sourceId)
+                  .toSet();
 
               // Always set RAG-filtered lists (even if empty) so
               // we don't fall back to sending the entire vault
@@ -194,6 +212,24 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
                   }
                 }
               }
+
+              if (chatSessionIds.isNotEmpty) {
+                ragChatSessions = [];
+                for (final sessionId in chatSessionIds) {
+                  final session =
+                      await database.getChatSessionById(sessionId);
+                  if (session != null) {
+                    ragChatSessions.add(ChatSession(
+                      id: session.id,
+                      title: session.title,
+                      messages: ChatSession.parseMessages(session.messages),
+                      isIndexed: session.isIndexed,
+                      createdAt: session.createdAt,
+                      updatedAt: session.updatedAt,
+                    ));
+                  }
+                }
+              }
             }
           }
         }
@@ -210,6 +246,7 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
         ragNotes: ragNotes,
         ragChunks: ragChunks,
         ragDocumentTitles: ragDocumentTitles,
+        ragChatSessions: ragChatSessions,
         ragUsed: ragUsed,
       );
 
@@ -241,6 +278,28 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
 
   void newChat() {
     state = const AiChatState();
+  }
+
+  /// Load a saved chat session into the current chat state.
+  void loadSession(ChatSession session) {
+    final messages = session.messages.map((m) => ChatMessage(
+          text: m.text,
+          isUser: m.isUser,
+        )).toList();
+
+    state = AiChatState(
+      messages: messages,
+      loadedSessionId: session.id,
+      loadedSessionTitle: session.title,
+    );
+  }
+
+  /// Mark that the current session has been saved.
+  void markSaved(String sessionId, String title) {
+    state = state.copyWith(
+      loadedSessionId: () => sessionId,
+      loadedSessionTitle: () => title,
+    );
   }
 }
 

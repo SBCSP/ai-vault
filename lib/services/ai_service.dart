@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../database/database.dart' as db;
+import '../models/chat_session.dart';
 import '../models/note.dart';
 import '../models/vault_entry.dart';
 
@@ -132,6 +133,7 @@ class AiService {
     List<Note> notes, {
     List<db.DocumentChunk>? documentChunks,
     List<String> documentTitles = const [],
+    List<ChatSession>? chatSessions,
   }) {
     final buf = StringBuffer();
     buf.writeln('=== USER RECORDS ===');
@@ -200,6 +202,30 @@ class AiService {
       }
     }
 
+    if (chatSessions != null && chatSessions.isNotEmpty) {
+      buf.writeln(
+          '--- PAST CONVERSATIONS (${chatSessions.length}) ---');
+      for (final session in chatSessions) {
+        final dateStr =
+            '${session.updatedAt.year}-${session.updatedAt.month.toString().padLeft(2, '0')}-${session.updatedAt.day.toString().padLeft(2, '0')}';
+        buf.writeln('Chat: "${session.title}" (from $dateStr)');
+        // Include up to 10 messages for context
+        final msgs = session.messages.take(10).toList();
+        for (final msg in msgs) {
+          final role = msg.isUser ? 'User' : 'Assistant';
+          final text = msg.text.length > 200
+              ? '${msg.text.substring(0, 200)}...'
+              : msg.text;
+          buf.writeln('  $role: $text');
+        }
+        if (session.messages.length > 10) {
+          buf.writeln(
+              '  ... (${session.messages.length - 10} more messages)');
+        }
+        buf.writeln();
+      }
+    }
+
     buf.writeln('=== END RECORDS ===');
     return buf.toString();
   }
@@ -246,6 +272,7 @@ class AiService {
     List<Note>? ragNotes,
     List<db.DocumentChunk>? ragChunks,
     List<String> documentTitles,
+    List<ChatSession>? chatSessions,
   ) {
     final sources = <String>[];
     if (ragEntries != null && ragEntries.isNotEmpty) {
@@ -259,6 +286,11 @@ class AiService {
       final docCount = documentTitles.length;
       sources.add(
         '$chunkCount chunk${chunkCount == 1 ? '' : 's'} from $docCount doc${docCount == 1 ? '' : 's'}',
+      );
+    }
+    if (chatSessions != null && chatSessions.isNotEmpty) {
+      sources.add(
+        '${chatSessions.length} past chat${chatSessions.length == 1 ? '' : 's'}',
       );
     }
     return sources;
@@ -284,6 +316,7 @@ class AiService {
     List<Note>? ragNotes,
     List<db.DocumentChunk>? ragChunks,
     List<String> ragDocumentTitles = const [],
+    List<ChatSession>? ragChatSessions,
     bool ragUsed = false,
   }) async {
     final aiStatus = await checkStatus();
@@ -304,6 +337,7 @@ class AiService {
       contextNotes,
       documentChunks: ragChunks,
       documentTitles: ragDocumentTitles,
+      chatSessions: ragChatSessions,
     );
 
     // Build messages with system prompt + vault context + history + query
@@ -339,7 +373,7 @@ class AiService {
       isVaultResult: referenced.entries.isNotEmpty || referenced.notes.isNotEmpty,
       ragUsed: ragUsed,
       ragSources: _buildRagSourceSummary(
-        ragEntries, ragNotes, ragChunks, ragDocumentTitles,
+        ragEntries, ragNotes, ragChunks, ragDocumentTitles, ragChatSessions,
       ),
     );
   }

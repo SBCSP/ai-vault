@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
 import '../database/database.dart';
+import '../models/chat_session.dart' as model;
 import '../models/document.dart' as model;
 import '../models/note.dart' as model;
 import '../models/vault_entry.dart' as model;
@@ -256,7 +257,45 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
     await refreshStats();
   }
 
-  /// Re-index all entries, notes, and documents from scratch.
+  /// Index a saved chat session. Single embedding per session.
+  Future<void> indexChatSession(model.ChatSession session) async {
+    final msgMaps = session.messages
+        .map((m) => {'text': m.text, 'isUser': m.isUser})
+        .toList();
+    final text =
+        EmbeddingService.buildChatSessionText(session.title, msgMaps);
+    final hash = EmbeddingService.computeContentHash(text);
+
+    final existing = await _db.getEmbeddingBySourceId(session.id);
+    if (existing != null &&
+        existing.contentHash == hash &&
+        existing.modelName == _modelName) {
+      return;
+    }
+
+    final vector = await _service.generateEmbedding(text);
+    if (vector == null) return;
+
+    await _db.upsertEmbedding(EmbeddingsCompanion(
+      id: Value(existing?.id ?? _uuid.v4()),
+      sourceId: Value(session.id),
+      sourceType: const Value('chat_session'),
+      embedding: Value(jsonEncode(vector)),
+      modelName: Value(_modelName),
+      contentHash: Value(hash),
+      createdAt: Value(DateTime.now()),
+    ));
+
+    await refreshStats();
+  }
+
+  /// Remove embedding for a deleted chat session.
+  Future<void> removeChatSession(String id) async {
+    await _db.deleteEmbeddingBySourceId(id);
+    await refreshStats();
+  }
+
+  /// Re-index all entries, notes, documents, and chat sessions from scratch.
   Future<void> reindexAll() async {
     if (state.isIndexing) return;
 
@@ -278,7 +317,11 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
         ) ??
         [];
 
-    final total = entries.length + notesList.length + docsList.length;
+    // Include indexed chat sessions in re-index
+    final indexedSessions = await _db.getIndexedChatSessions();
+
+    final total = entries.length + notesList.length + docsList.length +
+        indexedSessions.length;
     state = EmbeddingIndexState(
       isIndexing: true,
       totalItems: total,
@@ -390,6 +433,45 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
           contentHash: Value(fileHash),
           lastIndexedAt: Value(DateTime.now()),
           updatedAt: Value(DateTime.now()),
+        ));
+      }
+
+      processed++;
+      if (mounted) {
+        state = state.copyWith(processedItems: processed);
+      }
+    }
+
+    // Re-index chat sessions that were previously saved & indexed
+    for (final session in indexedSessions) {
+      if (!mounted) return;
+
+      final chatSession = model.ChatSession(
+        id: session.id,
+        title: session.title,
+        messages: model.ChatSession.parseMessages(session.messages),
+        isIndexed: true,
+        createdAt: session.createdAt,
+        updatedAt: session.updatedAt,
+      );
+
+      final msgMaps = chatSession.messages
+          .map((m) => {'text': m.text, 'isUser': m.isUser})
+          .toList();
+      final text =
+          EmbeddingService.buildChatSessionText(chatSession.title, msgMaps);
+      final hash = EmbeddingService.computeContentHash(text);
+      final vector = await _service.generateEmbedding(text);
+
+      if (vector != null) {
+        await _db.upsertEmbedding(EmbeddingsCompanion(
+          id: Value(_uuid.v4()),
+          sourceId: Value(chatSession.id),
+          sourceType: const Value('chat_session'),
+          embedding: Value(jsonEncode(vector)),
+          modelName: Value(_modelName),
+          contentHash: Value(hash),
+          createdAt: Value(DateTime.now()),
         ));
       }
 
