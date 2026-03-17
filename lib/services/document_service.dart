@@ -5,7 +5,64 @@ import 'package:syncfusion_flutter_pdf/pdf.dart';
 
 import 'embedding_service.dart';
 
+/// Result of scanning a directory for supported files.
+class DirectoryScanResult {
+  final List<File> supportedFiles;
+  final int skippedCount;
+  final List<String> skippedExtensions;
+
+  const DirectoryScanResult({
+    required this.supportedFiles,
+    required this.skippedCount,
+    required this.skippedExtensions,
+  });
+}
+
 class DocumentService {
+  /// Supported file extensions for indexing.
+  static const supportedExtensions = [
+    '.txt', '.md', '.markdown', '.json', '.yaml', '.yml', '.csv', '.log', '.pdf',
+  ];
+
+  /// Scan a directory recursively for supported files.
+  static Future<DirectoryScanResult> scanDirectory(String dirPath) async {
+    final dir = Directory(dirPath);
+    if (!await dir.exists()) {
+      return const DirectoryScanResult(
+        supportedFiles: [],
+        skippedCount: 0,
+        skippedExtensions: [],
+      );
+    }
+
+    final supported = <File>[];
+    var skipped = 0;
+    final skippedExts = <String>{};
+
+    await for (final entity in dir.list(recursive: true, followLinks: false)) {
+      if (entity is File) {
+        final ext = p.extension(entity.path).toLowerCase();
+        if (supportedExtensions.contains(ext)) {
+          supported.add(entity);
+        } else {
+          skipped++;
+          if (ext.isNotEmpty) skippedExts.add(ext);
+        }
+      }
+    }
+
+    // Sort by filename for consistent ordering
+    supported.sort((a, b) =>
+        p.basename(a.path).toLowerCase().compareTo(
+            p.basename(b.path).toLowerCase()));
+
+    return DirectoryScanResult(
+      supportedFiles: supported,
+      skippedCount: skipped,
+      skippedExtensions: skippedExts.toList()..sort(),
+    );
+  }
+
   /// Read file content from disk. Returns null if file doesn't exist.
   /// Supports text files and PDFs (extracts text from PDFs).
   static Future<String?> readFileContent(String filePath) async {
