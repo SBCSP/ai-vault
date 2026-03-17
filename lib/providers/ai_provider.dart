@@ -1,10 +1,16 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../database/database.dart' as db;
+import '../models/note.dart';
 import '../models/vault_entry.dart';
 import '../services/ai_service.dart';
+import '../services/embedding_service.dart';
+import 'embedding_provider.dart';
+import 'notes_provider.dart';
 import 'vault_provider.dart';
 
 final aiServiceProvider =
@@ -38,54 +44,203 @@ class AiServiceNotifier extends StateNotifier<AiService> {
   }
 }
 
-final aiSearchProvider =
-    StateNotifierProvider<AiSearchNotifier, AiSearchState>((ref) {
-  return AiSearchNotifier(ref);
+// --- AI Chat Provider ---
+// Maintains conversation history in memory for multi-turn chat.
+
+final aiChatProvider =
+    StateNotifierProvider<AiChatNotifier, AiChatState>((ref) {
+  return AiChatNotifier(ref);
 });
 
-class AiSearchState {
-  final bool isSearching;
-  final AiSearchResult? result;
+class AiChatState {
+  final List<ChatMessage> messages;
+  final bool isProcessing;
   final String? error;
 
-  const AiSearchState({
-    this.isSearching = false,
-    this.result,
+  const AiChatState({
+    this.messages = const [],
+    this.isProcessing = false,
     this.error,
   });
+
+  AiChatState copyWith({
+    List<ChatMessage>? messages,
+    bool? isProcessing,
+    String? Function()? error,
+  }) {
+    return AiChatState(
+      messages: messages ?? this.messages,
+      isProcessing: isProcessing ?? this.isProcessing,
+      error: error != null ? error() : this.error,
+    );
+  }
 }
 
-class AiSearchNotifier extends StateNotifier<AiSearchState> {
+class AiChatNotifier extends StateNotifier<AiChatState> {
   final Ref _ref;
 
-  AiSearchNotifier(this._ref) : super(const AiSearchState());
+  AiChatNotifier(this._ref) : super(const AiChatState());
 
-  Future<void> search(String query) async {
-    if (query.trim().isEmpty) {
-      state = const AiSearchState();
-      return;
-    }
+  Future<void> sendMessage(String query) async {
+    if (query.trim().isEmpty) return;
 
-    state = const AiSearchState(isSearching: true);
+    // Add user message
+    final userMessage = ChatMessage(
+      text: query,
+      isUser: true,
+    );
+
+    state = state.copyWith(
+      messages: [...state.messages, userMessage],
+      isProcessing: true,
+      error: () => null,
+    );
 
     try {
       final aiService = _ref.read(aiServiceProvider);
-      final entriesAsync = _ref.read(vaultEntriesProvider);
 
+      final entriesAsync = _ref.read(vaultEntriesProvider);
       final entries = entriesAsync.whenOrNull<List<VaultEntry>>(
             data: (data) => data,
           ) ??
           [];
 
-      final result = await aiService.searchVault(query, entries);
-      state = AiSearchState(result: result);
+      final notesAsync = _ref.read(notesProvider);
+      final notesList = notesAsync.whenOrNull<List<Note>>(
+            data: (data) => data,
+          ) ??
+          [];
+
+      // Pass conversation history (exclude the message we just added —
+      // the chat() method receives the query separately)
+      final history = state.messages
+          .where((m) => m != userMessage)
+          .toList();
+
+      // --- RAG pipeline: embed query and find top-K relevant items ---
+      List<VaultEntry>? ragEntries;
+      List<Note>? ragNotes;
+      List<db.DocumentChunk>? ragChunks;
+      List<String> ragDocumentTitles = [];
+      bool ragUsed = false;
+
+      try {
+        final embeddingService = _ref.read(embeddingServiceProvider);
+        final database = _ref.read(databaseProvider);
+
+        final queryVector =
+            await embeddingService.generateEmbedding(query);
+
+        if (queryVector != null) {
+          final allEmbeddings = await database.getAllEmbeddings();
+
+          if (allEmbeddings.isNotEmpty) {
+            // Score each embedding against the query
+            final scored = <({String sourceId, String sourceType, double score})>[];
+            for (final emb in allEmbeddings) {
+              final vector = (jsonDecode(emb.embedding) as List<dynamic>)
+                  .map((e) => (e as num).toDouble())
+                  .toList();
+              final score =
+                  EmbeddingService.cosineSimilarity(queryVector, vector);
+              scored.add((
+                sourceId: emb.sourceId,
+                sourceType: emb.sourceType,
+                score: score,
+              ));
+            }
+
+            // Sort by score descending, filter by minimum threshold, take top 10
+            scored.sort((a, b) => b.score.compareTo(a.score));
+            final topK = scored
+                .where((s) => s.score >= 0.3)
+                .take(10)
+                .toList();
+
+            if (topK.isNotEmpty) {
+              ragUsed = true;
+
+              final entryIds = topK
+                  .where((s) => s.sourceType == 'vault_entry')
+                  .map((s) => s.sourceId)
+                  .toSet();
+              final noteIds = topK
+                  .where((s) => s.sourceType == 'note')
+                  .map((s) => s.sourceId)
+                  .toSet();
+              final chunkIds = topK
+                  .where((s) => s.sourceType == 'document_chunk')
+                  .map((s) => s.sourceId)
+                  .toSet();
+
+              // Always set RAG-filtered lists (even if empty) so
+              // we don't fall back to sending the entire vault
+              ragEntries =
+                  entries.where((e) => entryIds.contains(e.id)).toList();
+              ragNotes =
+                  notesList.where((n) => noteIds.contains(n.id)).toList();
+
+              if (chunkIds.isNotEmpty) {
+                ragChunks =
+                    await database.getChunksByIds(chunkIds.toList());
+                // Fetch document titles for matched chunks
+                final docIds = ragChunks
+                    .map((c) => c.documentId)
+                    .toSet();
+                for (final docId in docIds) {
+                  final doc = await database.getDocumentById(docId);
+                  if (doc != null) {
+                    ragDocumentTitles.add(doc.title);
+                  }
+                }
+              }
+            }
+          }
+        }
+      } catch (_) {
+        // RAG failed — fall back to full context silently
+      }
+
+      final response = await aiService.chat(
+        query,
+        history,
+        entries,
+        notesList,
+        ragEntries: ragEntries,
+        ragNotes: ragNotes,
+        ragChunks: ragChunks,
+        ragDocumentTitles: ragDocumentTitles,
+        ragUsed: ragUsed,
+      );
+
+      if (!mounted) return;
+
+      final assistantMessage = ChatMessage(
+        text: response.text,
+        isUser: false,
+        matchedEntries: response.matchedEntries,
+        matchedNotes: response.matchedNotes,
+        aiOnline: response.aiOnline,
+        isVaultResult: response.isVaultResult,
+        ragUsed: response.ragUsed,
+        ragSources: response.ragSources,
+      );
+
+      state = state.copyWith(
+        messages: [...state.messages, assistantMessage],
+        isProcessing: false,
+      );
     } catch (e) {
-      state = AiSearchState(error: e.toString());
+      if (!mounted) return;
+      state = state.copyWith(
+        isProcessing: false,
+        error: () => e.toString(),
+      );
     }
   }
 
-  void clear() {
-    state = const AiSearchState();
+  void newChat() {
+    state = const AiChatState();
   }
 }
 

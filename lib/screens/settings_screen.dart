@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/ai_provider.dart';
+import '../providers/api_server_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/category_provider.dart';
 import 'ollama_screen.dart';
@@ -89,6 +91,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
                 const SizedBox(height: 16),
                 _CategoriesCard(),
+                const SizedBox(height: 16),
+                const _SecretsApiCard(),
                 const SizedBox(height: 16),
                 Card(
                   child: Padding(
@@ -285,5 +289,296 @@ class _CategoriesCard extends ConsumerWidget {
     if (confirmed == true) {
       await ref.read(categoryProvider.notifier).removeCategory(category);
     }
+  }
+}
+
+class _SecretsApiCard extends ConsumerStatefulWidget {
+  const _SecretsApiCard();
+
+  @override
+  ConsumerState<_SecretsApiCard> createState() => _SecretsApiCardState();
+}
+
+class _SecretsApiCardState extends ConsumerState<_SecretsApiCard> {
+  final _portController = TextEditingController();
+  bool _keyVisible = false;
+
+  @override
+  void dispose() {
+    _portController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _toggleEnabled(bool val) async {
+    if (!val) {
+      // Warn user the API key will be recycled
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Disable Secrets API?'),
+          content: const Text(
+            'Disabling the Secrets API will invalidate the current API key. '
+            'A new key will be generated when re-enabled. Any applications '
+            'using the current key will need to be updated.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: FilledButton.styleFrom(
+                backgroundColor: Theme.of(context).colorScheme.error,
+              ),
+              child: const Text('Disable'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+    }
+    ref.read(apiServerProvider.notifier).setEnabled(val);
+    setState(() => _keyVisible = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final apiState = ref.watch(apiServerProvider);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.api, color: theme.colorScheme.primary),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Secrets API',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+                Switch(
+                  value: apiState.enabled,
+                  onChanged: _toggleEnabled,
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Expose a local REST API so other apps on this machine '
+              'can retrieve your secrets programmatically.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            if (apiState.enabled) ...[
+              const SizedBox(height: 12),
+              // Status indicator
+              Row(
+                children: [
+                  Container(
+                    width: 10,
+                    height: 10,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: apiState.isRunning ? Colors.green : Colors.red,
+                      boxShadow: [
+                        BoxShadow(
+                          color: (apiState.isRunning
+                                  ? Colors.green
+                                  : Colors.red)
+                              .withValues(alpha: 0.5),
+                          blurRadius: 6,
+                          spreadRadius: 1,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    apiState.isRunning
+                        ? 'Running on localhost:${apiState.port}'
+                        : 'Stopped',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: apiState.isRunning ? Colors.green : Colors.red,
+                    ),
+                  ),
+                ],
+              ),
+              if (apiState.error != null) ...[
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.errorContainer,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    apiState.error!,
+                    style: TextStyle(
+                      color: theme.colorScheme.onErrorContainer,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 12),
+              // API Key section
+              Text(
+                'API Key',
+                style: theme.textTheme.labelLarge?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: SelectableText(
+                        _keyVisible
+                            ? (apiState.apiKey ?? '')
+                            : '\u2022' * 24,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          fontFamily: 'monospace',
+                          letterSpacing: _keyVisible ? 0 : 2,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: Icon(
+                        _keyVisible
+                            ? Icons.visibility_off
+                            : Icons.visibility,
+                        size: 18,
+                      ),
+                      tooltip:
+                          _keyVisible ? 'Hide API key' : 'Show API key',
+                      onPressed: () =>
+                          setState(() => _keyVisible = !_keyVisible),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.copy, size: 18),
+                      tooltip: 'Copy API key',
+                      onPressed: () {
+                        if (apiState.apiKey != null) {
+                          Clipboard.setData(
+                            ClipboardData(text: apiState.apiKey!),
+                          );
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('API key copied to clipboard'),
+                              duration: Duration(seconds: 2),
+                            ),
+                          );
+                        }
+                      },
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              // Port configuration
+              Row(
+                children: [
+                  Text('Port:', style: theme.textTheme.bodyMedium),
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    width: 100,
+                    child: TextField(
+                      controller: _portController
+                        ..text = apiState.port.toString(),
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        isDense: true,
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 8,
+                        ),
+                      ),
+                      onSubmitted: (val) {
+                        final port = int.tryParse(val);
+                        if (port != null && port > 0 && port <= 65535) {
+                          ref
+                              .read(apiServerProvider.notifier)
+                              .setPort(port);
+                        }
+                      },
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              // Endpoint docs
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: SelectableText(
+                  '# Auth: Bearer token or query param\n'
+                  'Authorization: Bearer <api_key>\n'
+                  '   — or —\n'
+                  '?api_key=<api_key>\n\n'
+                  'GET /api/health\n'
+                  'GET /api/secrets\n'
+                  'GET /api/secrets/:id\n'
+                  'GET /api/secrets?title=github\n'
+                  'GET /api/notes\n'
+                  'GET /api/notes/:id',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontFamily: 'monospace',
+                    height: 1.6,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Icon(
+                    Icons.warning_amber,
+                    size: 14,
+                    color: theme.colorScheme.error,
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      'Only accessible from localhost. Secrets are returned '
+                      'in plaintext to authorized local requests.',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.error,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 }

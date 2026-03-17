@@ -5,6 +5,7 @@ import 'dart:convert';
 
 import '../providers/ai_provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/embedding_provider.dart';
 import '../services/ai_service.dart';
 
 class OllamaScreen extends ConsumerStatefulWidget {
@@ -208,6 +209,10 @@ class _OllamaScreenState extends ConsumerState<OllamaScreen> {
 
                 // Active model
                 _buildActiveModelCard(theme, currentModel),
+                const SizedBox(height: 16),
+
+                // Embedding model
+                _buildEmbeddingModelCard(theme),
                 const SizedBox(height: 16),
 
                 // Download new model
@@ -496,6 +501,236 @@ class _OllamaScreenState extends ConsumerState<OllamaScreen> {
                 },
                 isExpanded: true,
               ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmbeddingModelCard(ThemeData theme) {
+    final embeddingModel = ref.watch(embeddingModelProvider);
+    final indexState = ref.watch(embeddingIndexProvider);
+    final modelNames = _models.map((m) => m.name).toList();
+
+    // Check if embedding model is installed
+    final isInstalled = modelNames.any(
+      (m) => m.toLowerCase() == embeddingModel.toLowerCase() ||
+          m.toLowerCase().startsWith(embeddingModel.toLowerCase().split(':').first),
+    );
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.hub, color: theme.colorScheme.primary),
+                const SizedBox(width: 8),
+                Text(
+                  'Embedding Model',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: isInstalled
+                        ? Colors.green.withValues(alpha: 0.1)
+                        : Colors.orange.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: isInstalled
+                          ? Colors.green.withValues(alpha: 0.3)
+                          : Colors.orange.withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: Text(
+                    isInstalled ? 'Installed' : 'Not Installed',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: isInstalled ? Colors.green : Colors.orange,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Used for RAG search — finds relevant vault items for AI queries.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            // Embedding model dropdown
+            if (_checking)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(8),
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              )
+            else if (modelNames.isEmpty)
+              InputDecorator(
+                decoration: const InputDecoration(
+                  labelText: 'Embedding Model',
+                  prefixIcon: Icon(Icons.hub),
+                  border: OutlineInputBorder(),
+                ),
+                child: Text(
+                  embeddingModel,
+                  style: TextStyle(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              )
+            else
+              DropdownButtonFormField<String>(
+                initialValue: modelNames.any(
+                  (m) => m.toLowerCase() == embeddingModel.toLowerCase(),
+                )
+                    ? modelNames.firstWhere(
+                        (m) =>
+                            m.toLowerCase() == embeddingModel.toLowerCase(),
+                      )
+                    : null,
+                decoration: const InputDecoration(
+                  labelText: 'Embedding Model',
+                  prefixIcon: Icon(Icons.hub),
+                  border: OutlineInputBorder(),
+                ),
+                hint: Text(embeddingModel),
+                items: modelNames.map((model) {
+                  final isActive =
+                      model.toLowerCase() == embeddingModel.toLowerCase();
+                  final info =
+                      _models.firstWhere((m) => m.name == model);
+                  return DropdownMenuItem<String>(
+                    value: model,
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            '$model  (${info.sizeLabel})',
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontWeight: isActive
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
+                            ),
+                          ),
+                        ),
+                        if (isActive)
+                          Icon(
+                            Icons.check_circle,
+                            size: 18,
+                            color: theme.colorScheme.primary,
+                          ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+                onChanged: (value) {
+                  if (value != null) {
+                    ref
+                        .read(embeddingModelProvider.notifier)
+                        .updateModel(value);
+                  }
+                },
+                isExpanded: true,
+              ),
+
+            const SizedBox(height: 12),
+
+            // Quick download button if not installed
+            if (!isInstalled && !ref.watch(modelDownloadProvider).isDownloading)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    ref
+                        .read(modelDownloadProvider.notifier)
+                        .downloadModel(embeddingModel);
+                  },
+                  icon: const Icon(Icons.download, size: 18),
+                  label: Text('Download $embeddingModel'),
+                ),
+              ),
+
+            // Index status
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceContainerHighest
+                    .withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.inventory_2,
+                        size: 16,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        indexState.isIndexing
+                            ? 'Indexing: ${indexState.processedItems}/${indexState.totalItems}'
+                            : '${indexState.indexedCount} items indexed',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const Spacer(),
+                      if (!indexState.isIndexing)
+                        TextButton.icon(
+                          onPressed: () => ref
+                              .read(embeddingIndexProvider.notifier)
+                              .reindexAll(),
+                          icon: const Icon(Icons.refresh, size: 16),
+                          label: const Text('Re-index All'),
+                          style: TextButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        ),
+                    ],
+                  ),
+                  if (indexState.isIndexing) ...[
+                    const SizedBox(height: 8),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: LinearProgressIndicator(
+                        value: indexState.totalItems > 0
+                            ? indexState.processedItems /
+                                indexState.totalItems
+                            : null,
+                        minHeight: 6,
+                      ),
+                    ),
+                  ],
+                  if (indexState.error != null) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      indexState.error!,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.error,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
           ],
         ),
       ),

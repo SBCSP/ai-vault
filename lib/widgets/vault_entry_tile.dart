@@ -25,8 +25,6 @@ class VaultEntryTile extends StatelessWidget {
         return Icons.api;
       case 'credit card':
         return Icons.credit_card;
-      case 'note':
-        return Icons.note;
       case 'ssh key':
         return Icons.terminal;
       case 'wifi':

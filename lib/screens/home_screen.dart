@@ -1,13 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../models/note.dart';
 import '../models/vault_entry.dart';
 import '../providers/ai_provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/documents_provider.dart';
+import '../providers/notes_provider.dart';
 import '../providers/vault_provider.dart';
 import '../services/ai_service.dart';
 import '../widgets/ai_search_bar.dart';
+import 'document_form_screen.dart';
+import 'documents_list_screen.dart';
 import 'entry_form_screen.dart';
+import 'note_form_screen.dart';
+import 'notes_list_screen.dart';
 import 'ollama_screen.dart';
 import 'settings_screen.dart';
 import 'categories_screen.dart';
@@ -21,10 +28,15 @@ class HomeScreen extends ConsumerStatefulWidget {
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends ConsumerState<HomeScreen> {
+class _HomeScreenState extends ConsumerState<HomeScreen>
+    with SingleTickerProviderStateMixin {
+  bool _fabOpen = false;
+
   @override
   Widget build(BuildContext context) {
     final entriesAsync = ref.watch(vaultEntriesProvider);
+    final notesAsync = ref.watch(notesProvider);
+    final docsAsync = ref.watch(documentsProvider);
     final aiService = ref.watch(aiServiceProvider);
 
     return Scaffold(
@@ -45,47 +57,178 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
         ],
       ),
-      body: entriesAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
-        data: (entries) {
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 800),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    // AI Search bar
-                    const AiSearchBar(),
-                    const SizedBox(height: 16),
+      body: Stack(
+        children: [
+          entriesAsync.when(
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (e, _) => Center(child: Text('Error: $e')),
+            data: (entries) {
+              final notes = notesAsync.valueOrNull ?? [];
+              final docCount = docsAsync.valueOrNull?.length ?? 0;
+              return SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 800),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // AI Search bar
+                        const AiChatWidget(),
+                        const SizedBox(height: 16),
 
-                    // Stats cards row
-                    _StatsRow(entries: entries, aiService: aiService),
-                    const SizedBox(height: 24),
+                        // Stats cards row
+                        _StatsRow(
+                          entries: entries,
+                          notes: notes,
+                          documentCount: docCount,
+                          aiService: aiService,
+                        ),
+                        const SizedBox(height: 24),
 
-                    // Upcoming expirations
-                    _ExpiringSecretsSection(entries: entries),
-                    const SizedBox(height: 24),
+                        // Upcoming expirations
+                        _ExpiringSecretsSection(entries: entries),
+                        const SizedBox(height: 24),
 
-                    // Recently updated
-                    _RecentSecretsSection(entries: entries),
-                  ],
+                        // Recently updated
+                        _RecentSecretsSection(entries: entries),
+                        // Extra padding so FAB doesn't cover content
+                        const SizedBox(height: 80),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+          // Scrim overlay when FAB menu is open
+          if (_fabOpen)
+            Positioned.fill(
+              child: GestureDetector(
+                onTap: () => setState(() => _fabOpen = false),
+                child: Container(
+                  color: Colors.black54,
                 ),
               ),
             ),
-          );
-        },
+        ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const EntryFormScreen()),
+      floatingActionButton: _buildSpeedDial(context),
+    );
+  }
+
+  Widget _buildSpeedDial(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        // Menu items (visible when open)
+        if (_fabOpen) ...[
+          _SpeedDialItem(
+            icon: Icons.key,
+            label: 'Add Secret',
+            onTap: () {
+              setState(() => _fabOpen = false);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => const EntryFormScreen()),
+              );
+            },
+            theme: theme,
+          ),
+          const SizedBox(height: 12),
+          _SpeedDialItem(
+            icon: Icons.note_add,
+            label: 'New Note',
+            onTap: () {
+              setState(() => _fabOpen = false);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => const NoteFormScreen()),
+              );
+            },
+            theme: theme,
+          ),
+          const SizedBox(height: 12),
+          _SpeedDialItem(
+            icon: Icons.description,
+            label: 'Add Document',
+            onTap: () {
+              setState(() => _fabOpen = false);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => const DocumentFormScreen()),
+              );
+            },
+            theme: theme,
+          ),
+          const SizedBox(height: 16),
+        ],
+        // Main FAB
+        FloatingActionButton(
+          onPressed: () => setState(() => _fabOpen = !_fabOpen),
+          child: AnimatedRotation(
+            turns: _fabOpen ? 0.125 : 0,
+            duration: const Duration(milliseconds: 200),
+            child: const Icon(Icons.add, size: 28),
+          ),
         ),
-        icon: const Icon(Icons.add),
-        label: const Text('Add Secret'),
-      ),
+      ],
+    );
+  }
+}
+
+/// Speed dial menu item
+class _SpeedDialItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final ThemeData theme;
+
+  const _SpeedDialItem({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    required this.theme,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.15),
+                blurRadius: 4,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Text(
+            label,
+            style: theme.textTheme.labelLarge?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        FloatingActionButton.small(
+          heroTag: label,
+          onPressed: onTap,
+          child: Icon(icon),
+        ),
+      ],
     );
   }
 }
@@ -93,9 +236,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 /// Top row of stat cards
 class _StatsRow extends StatefulWidget {
   final List<VaultEntry> entries;
+  final List<Note> notes;
+  final int documentCount;
   final dynamic aiService;
 
-  const _StatsRow({required this.entries, required this.aiService});
+  const _StatsRow({
+    required this.entries,
+    required this.notes,
+    required this.documentCount,
+    required this.aiService,
+  });
 
   @override
   State<_StatsRow> createState() => _StatsRowState();
@@ -139,25 +289,48 @@ class _StatsRowState extends State<_StatsRow> {
       categories[entry.category] = (categories[entry.category] ?? 0) + 1;
     }
 
+    final noteCount = widget.notes.length;
+
     return LayoutBuilder(
       builder: (context, constraints) {
-        final crossAxisCount = constraints.maxWidth > 600 ? 4 : 2;
+        final crossAxisCount = constraints.maxWidth > 600 ? 3 : 2;
         return GridView.count(
           crossAxisCount: crossAxisCount,
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           mainAxisSpacing: 12,
           crossAxisSpacing: 12,
-          childAspectRatio: 1.3,
+          childAspectRatio: constraints.maxWidth > 600 ? 2.2 : 1.3,
           children: [
             _DashboardCard(
               icon: Icons.shield,
               iconColor: Colors.indigo,
-              label: 'Total Secrets',
+              label: 'Secrets',
               value: '$totalSecrets',
               onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => const VaultListScreen()),
+              ),
+            ),
+            _DashboardCard(
+              icon: Icons.note,
+              iconColor: Colors.amber.shade700,
+              label: 'Notes',
+              value: '$noteCount',
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const NotesListScreen()),
+              ),
+            ),
+            _DashboardCard(
+              icon: Icons.description,
+              iconColor: Colors.deepPurple,
+              label: 'Documents',
+              value: '${widget.documentCount}',
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => const DocumentsListScreen()),
               ),
             ),
             _DashboardCard(
@@ -245,7 +418,7 @@ class _DashboardCard extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Icon(icon, color: iconColor, size: 24),
+                  Icon(icon, color: iconColor, size: 20),
                   if (onTap != null)
                     Icon(
                       Icons.arrow_forward_ios,
@@ -257,7 +430,7 @@ class _DashboardCard extends StatelessWidget {
               const Spacer(),
               Text(
                 value,
-                style: theme.textTheme.headlineSmall?.copyWith(
+                style: theme.textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.bold,
                 ),
                 maxLines: 1,
@@ -698,8 +871,6 @@ class _RecentSecretsSection extends StatelessWidget {
         return Icons.key;
       case 'credit card':
         return Icons.credit_card;
-      case 'note':
-        return Icons.note;
       case 'ssh key':
         return Icons.terminal;
       case 'wifi':

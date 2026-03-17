@@ -4,25 +4,29 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/note.dart';
 import '../providers/ai_provider.dart';
-import '../screens/chat_screen.dart';
 import '../services/ai_service.dart';
-import 'markdown_response.dart';
+import '../widgets/markdown_response.dart';
 
-class AiChatWidget extends ConsumerStatefulWidget {
-  const AiChatWidget({super.key});
+/// Full-screen chat interface ("Focus Mode").
+/// Shares the same [aiChatProvider] state as the home-screen widget,
+/// so the conversation is seamless when entering/leaving.
+class ChatScreen extends ConsumerStatefulWidget {
+  const ChatScreen({super.key});
 
   @override
-  ConsumerState<AiChatWidget> createState() => _AiChatWidgetState();
+  ConsumerState<ChatScreen> createState() => _ChatScreenState();
 }
 
-class _AiChatWidgetState extends ConsumerState<AiChatWidget> {
+class _ChatScreenState extends ConsumerState<ChatScreen> {
   final _controller = TextEditingController();
   final _scrollController = ScrollController();
+  final _focusNode = FocusNode();
 
   @override
   void dispose() {
     _controller.dispose();
     _scrollController.dispose();
+    _focusNode.dispose();
     super.dispose();
   }
 
@@ -31,8 +35,8 @@ class _AiChatWidgetState extends ConsumerState<AiChatWidget> {
     if (text.isEmpty) return;
     _controller.clear();
     ref.read(aiChatProvider.notifier).sendMessage(text);
-    // Scroll to bottom after sending
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+    _focusNode.requestFocus();
   }
 
   void _scrollToBottom() {
@@ -50,7 +54,6 @@ class _AiChatWidgetState extends ConsumerState<AiChatWidget> {
     final chatState = ref.watch(aiChatProvider);
     final theme = Theme.of(context);
 
-    // Auto-scroll when new messages arrive
     ref.listen(aiChatProvider, (prev, next) {
       if (prev != null && next.messages.length > prev.messages.length) {
         WidgetsBinding.instance
@@ -58,211 +61,204 @@ class _AiChatWidgetState extends ConsumerState<AiChatWidget> {
       }
     });
 
-    final hasMessages = chatState.messages.isNotEmpty;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        // Header with "New Chat" button
-        if (hasMessages)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 8, 0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
-                  children: [
-                    Icon(
-                      Icons.auto_awesome,
-                      size: 16,
-                      color: theme.colorScheme.primary,
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      'AI Chat',
-                      style: theme.textTheme.labelLarge?.copyWith(
-                        color: theme.colorScheme.primary,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 1,
-                      ),
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.primaryContainer,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        ref.watch(aiServiceProvider).model,
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: theme.colorScheme.onPrimaryContainer,
-                          fontSize: 10,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      onPressed: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => const ChatScreen()),
-                      ),
-                      icon: const Icon(Icons.open_in_full, size: 18),
-                      tooltip: 'Focus mode',
-                      visualDensity: VisualDensity.compact,
-                      style: IconButton.styleFrom(
-                        padding: const EdgeInsets.all(6),
-                      ),
-                    ),
-                    TextButton.icon(
-                      onPressed: () =>
-                          ref.read(aiChatProvider.notifier).newChat(),
-                      icon: const Icon(Icons.add, size: 16),
-                      label: const Text('New Chat'),
-                      style: TextButton.styleFrom(
-                        visualDensity: VisualDensity.compact,
-                        textStyle: theme.textTheme.labelMedium,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-
-        // Messages list
-        if (hasMessages)
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 400),
-            child: ListView.builder(
-              controller: _scrollController,
-              shrinkWrap: true,
-              padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
-              itemCount: chatState.messages.length,
-              itemBuilder: (context, index) {
-                final msg = chatState.messages[index];
-                return _ChatBubble(message: msg);
-              },
-            ),
-          ),
-
-        // Typing indicator
-        if (chatState.isProcessing)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-            child: Row(
-              children: [
-                const SizedBox(
-                  width: 14,
-                  height: 14,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  'Thinking...',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-        // Error display
-        if (chatState.error != null)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
-            child: Container(
-              padding: const EdgeInsets.all(8),
+    return Scaffold(
+      appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.close_fullscreen),
+          tooltip: 'Exit focus mode',
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.auto_awesome, size: 18, color: theme.colorScheme.primary),
+            const SizedBox(width: 8),
+            const Text('AI Chat'),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
               decoration: BoxDecoration(
-                color: theme.colorScheme.errorContainer,
-                borderRadius: BorderRadius.circular(8),
+                color: theme.colorScheme.primaryContainer,
+                borderRadius: BorderRadius.circular(10),
               ),
               child: Text(
-                chatState.error!,
-                style: TextStyle(
-                  color: theme.colorScheme.onErrorContainer,
-                  fontSize: 12,
+                ref.watch(aiServiceProvider).model,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.onPrimaryContainer,
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton.icon(
+            onPressed: () => ref.read(aiChatProvider.notifier).newChat(),
+            icon: const Icon(Icons.add, size: 18),
+            label: const Text('New Chat'),
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          // Messages
+          Expanded(
+            child: chatState.messages.isEmpty
+                ? Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.auto_awesome,
+                          size: 48,
+                          color: theme.colorScheme.primary.withValues(alpha: 0.4),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Ask AI anything',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Search your vault, documents, and notes — or just chat.',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : ListView.builder(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                    itemCount: chatState.messages.length,
+                    itemBuilder: (context, index) {
+                      return _FocusChatBubble(
+                        message: chatState.messages[index],
+                      );
+                    },
+                  ),
+          ),
+
+          // Typing indicator
+          if (chatState.isProcessing)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 4),
+              child: Row(
+                children: [
+                  const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    'Thinking...',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+          // Error
+          if (chatState.error != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.errorContainer,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  chatState.error!,
+                  style: TextStyle(
+                    color: theme.colorScheme.onErrorContainer,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            ),
+
+          // Input bar
+          Container(
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surface,
+              border: Border(
+                top: BorderSide(
+                  color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
+                ),
+              ),
+            ),
+            padding: EdgeInsets.fromLTRB(
+              16,
+              12,
+              16,
+              12 + MediaQuery.of(context).viewPadding.bottom,
+            ),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 720),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _controller,
+                        focusNode: _focusNode,
+                        onSubmitted: (_) => _send(),
+                        textInputAction: TextInputAction.send,
+                        autofocus: true,
+                        decoration: InputDecoration(
+                          hintText: 'Message AI...',
+                          prefixIcon:
+                              const Icon(Icons.auto_awesome, size: 20),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(24),
+                          ),
+                          filled: true,
+                          fillColor: theme
+                              .colorScheme.surfaceContainerHighest
+                              .withValues(alpha: 0.5),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 14,
+                          ),
+                        ),
+                        onChanged: (_) => setState(() {}),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    IconButton.filled(
+                      onPressed:
+                          _controller.text.trim().isNotEmpty &&
+                                  !chatState.isProcessing
+                              ? _send
+                              : null,
+                      icon: const Icon(Icons.send, size: 22),
+                      style: IconButton.styleFrom(
+                        minimumSize: const Size(48, 48),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
           ),
-
-        // Input field
-        Padding(
-          padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _controller,
-                  onSubmitted: (_) => _send(),
-                  textInputAction: TextInputAction.send,
-                  decoration: InputDecoration(
-                    hintText: hasMessages
-                        ? 'Continue the conversation...'
-                        : 'Ask AI anything...',
-                    prefixIcon: const Icon(Icons.auto_awesome, size: 20),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(24),
-                    ),
-                    filled: true,
-                    fillColor: theme.colorScheme.surfaceContainerHighest
-                        .withValues(alpha: 0.5),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
-                    ),
-                    isDense: true,
-                  ),
-                  onChanged: (_) => setState(() {}),
-                ),
-              ),
-              if (!hasMessages) ...[
-                const SizedBox(width: 4),
-                IconButton(
-                  onPressed: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (_) => const ChatScreen()),
-                  ),
-                  icon: const Icon(Icons.open_in_full, size: 18),
-                  tooltip: 'Focus mode',
-                  style: IconButton.styleFrom(
-                    minimumSize: const Size(40, 40),
-                  ),
-                ),
-              ],
-              const SizedBox(width: 4),
-              IconButton.filled(
-                onPressed: _controller.text.trim().isNotEmpty && !chatState.isProcessing
-                    ? _send
-                    : null,
-                icon: const Icon(Icons.send, size: 20),
-                style: IconButton.styleFrom(
-                  minimumSize: const Size(44, 44),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
 
-/// A single chat message bubble
-class _ChatBubble extends StatelessWidget {
+/// Full-screen chat bubble — slightly larger and more spacious than the widget version.
+class _FocusChatBubble extends StatelessWidget {
   final ChatMessage message;
 
-  const _ChatBubble({required this.message});
+  const _FocusChatBubble({required this.message});
 
   @override
   Widget build(BuildContext context) {
@@ -272,14 +268,15 @@ class _ChatBubble extends StatelessWidget {
       return Align(
         alignment: Alignment.centerRight,
         child: Container(
-          margin: const EdgeInsets.only(top: 6, bottom: 2, left: 48),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          margin: const EdgeInsets.only(top: 8, bottom: 4, left: 64),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          constraints: const BoxConstraints(maxWidth: 600),
           decoration: BoxDecoration(
             color: theme.colorScheme.primary,
             borderRadius: const BorderRadius.only(
-              topLeft: Radius.circular(16),
-              topRight: Radius.circular(16),
-              bottomLeft: Radius.circular(16),
+              topLeft: Radius.circular(18),
+              topRight: Radius.circular(18),
+              bottomLeft: Radius.circular(18),
               bottomRight: Radius.circular(4),
             ),
           ),
@@ -287,6 +284,7 @@ class _ChatBubble extends StatelessWidget {
             message.text,
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.onPrimary,
+              height: 1.4,
             ),
           ),
         ),
@@ -295,20 +293,20 @@ class _ChatBubble extends StatelessWidget {
 
     // Assistant message
     return Container(
-      margin: const EdgeInsets.only(top: 6, bottom: 2, right: 32),
+      margin: const EdgeInsets.only(top: 8, bottom: 4, right: 48),
+      constraints: const BoxConstraints(maxWidth: 640),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Text response
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
               color: theme.colorScheme.surfaceContainerHighest,
               borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(16),
-                topRight: Radius.circular(16),
+                topLeft: Radius.circular(18),
+                topRight: Radius.circular(18),
                 bottomLeft: Radius.circular(4),
-                bottomRight: Radius.circular(16),
+                bottomRight: Radius.circular(18),
               ),
             ),
             child: Column(
@@ -329,15 +327,15 @@ class _ChatBubble extends StatelessWidget {
             ),
           ),
 
-          // Matched entries (if vault result)
+          // Matched vault entries / notes
           if (message.matchedEntries.isNotEmpty ||
               message.matchedNotes.isNotEmpty) ...[
-            const SizedBox(height: 4),
+            const SizedBox(height: 6),
             Container(
               decoration: BoxDecoration(
-                color: theme.colorScheme.primaryContainer
-                    .withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(12),
+                color:
+                    theme.colorScheme.primaryContainer.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(14),
                 border: Border.all(
                   color: theme.colorScheme.primary.withValues(alpha: 0.2),
                 ),
@@ -360,7 +358,6 @@ class _ChatBubble extends StatelessWidget {
   }
 }
 
-/// Small badge showing whether the response is AI-powered or local fallback
 class _AiStatusBadge extends StatelessWidget {
   final bool aiOnline;
 
@@ -369,7 +366,6 @@ class _AiStatusBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
@@ -390,8 +386,7 @@ class _AiStatusBadge extends StatelessWidget {
           Text(
             aiOnline ? 'AI' : 'Local',
             style: theme.textTheme.labelSmall?.copyWith(
-              color:
-                  aiOnline ? Colors.green.shade700 : Colors.orange.shade700,
+              color: aiOnline ? Colors.green.shade700 : Colors.orange.shade700,
               fontWeight: FontWeight.w500,
               fontSize: 10,
             ),
@@ -414,8 +409,7 @@ class _RagSourceBadge extends StatelessWidget {
         ? 'RAG: ${sources.join(', ')}'
         : 'RAG search';
     return Tooltip(
-      message:
-          'Retrieval-Augmented Generation was used to find relevant context',
+      message: 'Retrieval-Augmented Generation was used to find relevant context',
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
         decoration: BoxDecoration(
@@ -450,7 +444,6 @@ class _RagSourceBadge extends StatelessWidget {
   }
 }
 
-/// Card for displaying a matched note in AI search results
 class _NoteCard extends StatelessWidget {
   final Note note;
 
@@ -461,16 +454,14 @@ class _NoteCard extends StatelessWidget {
     final theme = Theme.of(context);
     final dateStr =
         '${note.updatedAt.year}-${note.updatedAt.month.toString().padLeft(2, '0')}-${note.updatedAt.day.toString().padLeft(2, '0')}';
-
-    // Show first few lines of body as preview
     final preview = note.body.isNotEmpty
-        ? note.body.length > 150
-            ? '${note.body.substring(0, 150)}...'
+        ? note.body.length > 200
+            ? '${note.body.substring(0, 200)}...'
             : note.body
         : '';
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -487,7 +478,8 @@ class _NoteCard extends StatelessWidget {
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                 decoration: BoxDecoration(
                   color: theme.colorScheme.tertiaryContainer,
                   borderRadius: BorderRadius.circular(8),
@@ -503,19 +495,19 @@ class _NoteCard extends StatelessWidget {
             ],
           ),
           if (preview.isNotEmpty) ...[
-            const SizedBox(height: 4),
+            const SizedBox(height: 6),
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.all(6),
+              padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
                 color: theme.colorScheme.surfaceContainerHighest
                     .withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(6),
+                borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
                 preview,
                 style: theme.textTheme.bodySmall?.copyWith(height: 1.3),
-                maxLines: 4,
+                maxLines: 5,
                 overflow: TextOverflow.ellipsis,
               ),
             ),
@@ -535,7 +527,6 @@ class _NoteCard extends StatelessWidget {
   }
 }
 
-/// Individual entry card with copyable secret
 class _SecretEntryCard extends StatefulWidget {
   final dynamic entry;
 
@@ -557,11 +548,10 @@ class _SecretEntryCardState extends State<_SecretEntryCard> {
     final hasSecret = secret.isNotEmpty;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Title + category
           Row(
             children: [
               Icon(
@@ -594,24 +584,18 @@ class _SecretEntryCardState extends State<_SecretEntryCard> {
             ],
           ),
           const SizedBox(height: 4),
-
-          // Metadata
           if ((entry.username as String? ?? '').isNotEmpty)
             _metaRow(context, 'User', entry.username),
           if ((entry.url as String? ?? '').isNotEmpty)
             _metaRow(context, 'URL', entry.url),
-
-          // Expiry
           if (entry.expiresAt != null) _expiryRow(context, entry),
-
-          // Secret with copy button
           if (hasSecret) ...[
             const SizedBox(height: 4),
             Container(
-              padding: const EdgeInsets.all(6),
+              padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
                 color: theme.colorScheme.surface,
-                borderRadius: BorderRadius.circular(6),
+                borderRadius: BorderRadius.circular(8),
                 border: Border.all(
                   color: theme.colorScheme.outline.withValues(alpha: 0.2),
                 ),
@@ -693,20 +677,12 @@ class _SecretEntryCardState extends State<_SecretEntryCard> {
       statusText = dateStr;
     }
 
-    return _metaRow(
-      context,
-      'Expires',
-      statusText,
-      valueColor: (isExpired || isExpiringSoon) ? statusColor : null,
-    );
+    return _metaRow(context, 'Expires', statusText,
+        valueColor: (isExpired || isExpiringSoon) ? statusColor : null);
   }
 
-  Widget _metaRow(
-    BuildContext context,
-    String label,
-    String value, {
-    Color? valueColor,
-  }) {
+  Widget _metaRow(BuildContext context, String label, String value,
+      {Color? valueColor}) {
     final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.only(bottom: 1),

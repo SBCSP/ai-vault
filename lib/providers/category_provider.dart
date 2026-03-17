@@ -7,7 +7,6 @@ const defaultCategories = [
   'Login',
   'API Key',
   'Credit Card',
-  'Note',
   'SSH Key',
   'WiFi',
 ];

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/vault_entry.dart';
 import '../providers/auth_provider.dart';
+import '../providers/embedding_provider.dart';
 import '../providers/vault_provider.dart';
 import 'entry_form_screen.dart';
 
@@ -144,6 +145,7 @@ class _ExpiredEntryTile extends ConsumerWidget {
             onPressed: () {
               Navigator.pop(ctx);
               ref.read(vaultActionsProvider).deleteEntry(entry.id);
+              ref.read(embeddingIndexProvider.notifier).removeEntry(entry.id);
             },
             child: const Text('Delete'),
           ),
@@ -160,8 +162,6 @@ class _ExpiredEntryTile extends ConsumerWidget {
         return Icons.key;
       case 'credit card':
         return Icons.credit_card;
-      case 'note':
-        return Icons.note;
       case 'ssh key':
         return Icons.terminal;
       case 'wifi':
