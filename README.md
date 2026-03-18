@@ -12,6 +12,25 @@
   A privacy-first macOS desktop app that combines encrypted credential storage, notes, document indexing, AWS Secrets Manager sync, and AI-powered semantic search — all running entirely on your machine with Ollama.
 </p>
 
+<p align="center">
+  <a href="https://github.com/SBCSP/ai-vault/releases/latest">
+    <img src="https://img.shields.io/github/v/release/SBCSP/ai-vault?label=Download&style=for-the-badge&logo=apple&logoColor=white" alt="Download Latest Release" />
+  </a>
+</p>
+
+---
+
+## Install
+
+### macOS (DMG)
+
+1. Download the latest `.dmg` from the [**Releases page**](https://github.com/SBCSP/ai-vault/releases/latest)
+2. Open the `.dmg` file
+3. Drag **AI VaultIO** into your **Applications** folder
+4. Launch from Applications (right-click → **Open** on first launch to bypass Gatekeeper)
+
+> **Requires:** macOS 12+ (Monterey or later) and [Ollama](https://ollama.com) for AI features.
+
 ---
 
 ## What is AI VaultIO?
