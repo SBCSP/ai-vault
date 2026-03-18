@@ -38,6 +38,12 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Version: $VERSION"
 
+      - name: Code sign (ad-hoc)
+        run: |
+          APP_PATH="build/macos/Build/Products/Release/AI VaultIO.app"
+          codesign --force --deep --sign - "$APP_PATH"
+          xattr -cr "$APP_PATH"
+
       - name: Create DMG
         run: |
           APP_NAME="AI VaultIO"
@@ -98,7 +104,10 @@ jobs:
             1. Download `AI-VaultIO-macOS-v${{ steps.version.outputs.version }}.dmg` below
             2. Open the `.dmg` file
             3. Drag **AI VaultIO** to your **Applications** folder
-            4. Launch from Applications (you may need to right-click → Open on first launch)
+            4. **First launch — bypass Gatekeeper** (app is not notarized):
+               - Open **System Settings → Privacy & Security**
+               - Scroll down to find _"AI VaultIO" was blocked_ and click **Open Anyway**
+               - Or run in Terminal: `xattr -cr /Applications/AI\ VaultIO.app`
 
             ### Prerequisites
             - macOS 12+ (Monterey or later)

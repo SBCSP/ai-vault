@@ -31,6 +31,16 @@ fi
 
 echo "✓ Build complete: $APP_PATH"
 
+# ─── Step 1b: Ad-hoc code sign ────────────────────────────────────
+echo "→ Code signing (ad-hoc)..."
+codesign --force --deep --sign - "$APP_PATH"
+echo "✓ Ad-hoc signed"
+
+# ─── Step 1c: Strip quarantine attribute ──────────────────────────
+echo "→ Removing quarantine attribute..."
+xattr -cr "$APP_PATH"
+echo "✓ Quarantine cleared"
+
 # ─── Step 2: Create DMG staging area ──────────────────────────────
 echo "→ Preparing DMG staging area..."
 rm -rf "$DMG_DIR"
