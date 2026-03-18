@@ -9,6 +9,7 @@ const defaultCategories = [
   'Credit Card',
   'SSH Key',
   'WiFi',
+  'AWS-SM',
 ];
 
 final categoryProvider =

@@ -54,7 +54,7 @@ class VaultActions {
       : _db = db,
         _encryption = encryption;
 
-  Future<void> addEntry(model.VaultEntry entry) async {
+  Future<String> addEntry(model.VaultEntry entry) async {
     final now = DateTime.now();
     final id = entry.id.isEmpty ? _uuid.v4() : entry.id;
 
@@ -77,6 +77,8 @@ class VaultActions {
       updatedAt: now,
       expiresAt: Value(entry.expiresAt),
     ));
+
+    return id;
   }
 
   Future<void> updateEntry(model.VaultEntry entry) async {

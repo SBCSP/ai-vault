@@ -46,7 +46,7 @@ class NoteActions {
   })  : _db = db,
         _encryption = encryption;
 
-  Future<void> addNote(model.Note note) async {
+  Future<String> addNote(model.Note note) async {
     final now = DateTime.now();
     final id = note.id.isEmpty ? _uuid.v4() : note.id;
 
@@ -60,6 +60,8 @@ class NoteActions {
       createdAt: now,
       updatedAt: now,
     ));
+
+    return id;
   }
 
   Future<void> updateNote(model.Note note) async {

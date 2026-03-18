@@ -367,7 +367,20 @@ class _DocumentFormScreenState extends ConsumerState<DocumentFormScreen> {
 
     // Index the document (read, chunk, embed)
     final docWithId = doc.copyWith(id: docId);
-    await ref.read(embeddingIndexProvider.notifier).indexDocument(docWithId);
+    try {
+      await ref.read(embeddingIndexProvider.notifier).indexDocument(docWithId);
+    } catch (e) {
+      // Document was saved but indexing failed — still navigate back
+      // but show warning so user knows RAG won't find this document
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Document saved but indexing failed: $e'),
+            backgroundColor: Colors.orange.shade700,
+          ),
+        );
+      }
+    }
 
     if (mounted) {
       setState(() => _saving = false);

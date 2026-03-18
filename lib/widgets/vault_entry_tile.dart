@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -17,6 +19,19 @@ class VaultEntryTile extends StatelessWidget {
     required this.onDelete,
   });
 
+  String _awsSmSubtitle(VaultEntry entry) {
+    try {
+      final decoded = jsonDecode(entry.password);
+      if (decoded is Map) {
+        final keys = decoded.keys.take(3).join(', ');
+        final suffix =
+            decoded.length > 3 ? ' +${decoded.length - 3} more' : '';
+        return '$keys$suffix';
+      }
+    } catch (_) {}
+    return 'AWS-SM \u2022 1 value';
+  }
+
   IconData _categoryIcon(String category) {
     switch (category.toLowerCase()) {
       case 'login':
@@ -29,6 +44,8 @@ class VaultEntryTile extends StatelessWidget {
         return Icons.terminal;
       case 'wifi':
         return Icons.wifi;
+      case 'aws-sm':
+        return Icons.cloud_download;
       default:
         return Icons.lock;
     }
@@ -76,14 +93,21 @@ class VaultEntryTile extends StatelessWidget {
           subtitle: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                [
-                  if (entry.username.isNotEmpty) entry.username,
-                  if (entry.url.isNotEmpty) entry.url,
-                ].join(' \u2022 '),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
+              if (entry.category == 'AWS-SM')
+                Text(
+                  _awsSmSubtitle(entry),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                )
+              else
+                Text(
+                  [
+                    if (entry.username.isNotEmpty) entry.username,
+                    if (entry.url.isNotEmpty) entry.url,
+                  ].join(' \u2022 '),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               if (entry.isExpired)
                 Text(
                   'EXPIRED',
@@ -224,19 +248,16 @@ class _DeleteConfirmationDialogState
                     ),
                   ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.copy, size: 18),
-                  tooltip: 'Copy name',
-                  visualDensity: VisualDensity.compact,
+                FilledButton.tonalIcon(
+                  icon: const Icon(Icons.content_paste_go, size: 16),
+                  label: const Text('Fill'),
+                  style: FilledButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10),
+                  ),
                   onPressed: () {
-                    Clipboard.setData(
-                        ClipboardData(text: widget.entry.title));
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Name copied to clipboard'),
-                        duration: Duration(seconds: 1),
-                      ),
-                    );
+                    _controller.text = widget.entry.title;
                   },
                 ),
               ],

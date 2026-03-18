@@ -1,0 +1,111 @@
+name: Build & Release macOS DMG
+
+on:
+  push:
+    tags:
+      - 'v*'  # Trigger on version tags like v1.0.0, v1.2.3
+
+  workflow_dispatch:  # Allow manual trigger from GitHub UI
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    permissions:
+      contents: write  # Needed to create releases
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Generate database code
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Build macOS release
+        run: flutter build macos --release
+
+      - name: Extract version
+        id: version
+        run: |
+          VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | sed 's/+.*//')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+
+      - name: Create DMG
+        run: |
+          APP_NAME="AI VaultIO"
+          DMG_NAME="AI-VaultIO-macOS-v${{ steps.version.outputs.version }}"
+          BUILD_DIR="build/macos/Build/Products/Release"
+
+          mkdir -p build/dmg/staging
+          cp -R "$BUILD_DIR/$APP_NAME.app" build/dmg/staging/
+          ln -s /Applications build/dmg/staging/Applications
+
+          # Install create-dmg for a polished installer
+          brew install create-dmg || true
+
+          if command -v create-dmg &> /dev/null; then
+            create-dmg \
+              --volname "$APP_NAME" \
+              --volicon "$BUILD_DIR/$APP_NAME.app/Contents/Resources/AppIcon.icns" \
+              --window-pos 200 120 \
+              --window-size 600 400 \
+              --icon-size 100 \
+              --icon "$APP_NAME.app" 150 185 \
+              --icon "Applications" 450 185 \
+              --hide-extension "$APP_NAME.app" \
+              --app-drop-link 450 185 \
+              "build/dmg/$DMG_NAME.dmg" \
+              build/dmg/staging/ || \
+            # Fallback if create-dmg fails (e.g., no window server)
+            hdiutil create \
+              -volname "$APP_NAME" \
+              -srcfolder build/dmg/staging \
+              -ov -format UDZO \
+              "build/dmg/$DMG_NAME.dmg"
+          else
+            hdiutil create \
+              -volname "$APP_NAME" \
+              -srcfolder build/dmg/staging \
+              -ov -format UDZO \
+              "build/dmg/$DMG_NAME.dmg"
+          fi
+
+          rm -rf build/dmg/staging
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AI-VaultIO-macOS
+          path: build/dmg/*.dmg
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: AI VaultIO ${{ steps.version.outputs.version }}
+          body: |
+            ## AI VaultIO ${{ steps.version.outputs.version }}
+
+            ### Installation
+            1. Download `AI-VaultIO-macOS-v${{ steps.version.outputs.version }}.dmg` below
+            2. Open the `.dmg` file
+            3. Drag **AI VaultIO** to your **Applications** folder
+            4. Launch from Applications (you may need to right-click → Open on first launch)
+
+            ### Prerequisites
+            - macOS 12+ (Monterey or later)
+            - [Ollama](https://ollama.com) installed for AI chat features
+
+            ---
+            _Built with Flutter & Ollama — 100% local, 100% private._
+          files: build/dmg/*.dmg
+          draft: false
+          prerelease: false

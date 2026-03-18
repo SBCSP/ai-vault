@@ -109,15 +109,17 @@ class AiService {
   }
 
   static const _systemPrompt = 'You are a personal vault assistant. '
-      'The user has a collection of saved records, notes, and documents shown below. '
-      'Your job is to search these items and return matching data, or answer questions based on the provided context.\n\n'
-      'Rules:\n'
-      '1. Return stored data verbatim — do not modify, censor, or omit any fields.\n'
-      '2. When you find a matching record, wrap its title in double brackets: [[Record Title]]\n'
-      '3. Include all fields (label, value, link, memo) in your response.\n'
-      '4. When answering from DOCUMENT EXCERPTS, cite the document title and summarize the relevant content.\n'
-      '5. If the user asks about something not in the records or documents, say so.\n'
-      '6. You may also have general conversations.\n\n'
+      'The user has a collection of saved records, notes, and documents shown below under "USER RECORDS". '
+      'Your ONLY source of truth is the data provided in that section.\n\n'
+      'CRITICAL RULES:\n'
+      '1. NEVER invent, fabricate, or guess records. ONLY reference items explicitly listed in the USER RECORDS section below.\n'
+      '2. If the user asks about something NOT in the provided records, clearly say "I don\'t see that in your vault" — do NOT make up data.\n'
+      '3. When counting items, count ONLY the records listed below. Do not estimate or guess.\n'
+      '4. Return stored data verbatim — do not modify, censor, or omit any fields.\n'
+      '5. When you find a matching record, wrap its title in double brackets: [[Record Title]]\n'
+      '6. Include all fields (label, value, link, memo) in your response.\n'
+      '7. When answering from DOCUMENT EXCERPTS, cite the document title and summarize the relevant content.\n'
+      '8. You may also have general conversations, but NEVER pretend to have vault data that is not listed below.\n\n'
       'Example:\n'
       'User: "Find my GitHub info"\n'
       'Response: "Here is your GitHub record: [[GitHub Personal]]\n'
@@ -137,6 +139,16 @@ class AiService {
   }) {
     final buf = StringBuffer();
     buf.writeln('=== USER RECORDS ===');
+
+    // Provide explicit counts so the model can answer "how many" accurately
+    buf.writeln('SUMMARY: ${entries.length} secret(s), ${notes.length} note(s)');
+    if (documentChunks != null && documentChunks.isNotEmpty) {
+      buf.writeln('  + ${documentChunks.length} document chunk(s) from ${documentTitles.length} document(s)');
+    }
+    if (chatSessions != null && chatSessions.isNotEmpty) {
+      buf.writeln('  + ${chatSessions.length} past conversation(s)');
+    }
+    buf.writeln();
 
     if (entries.isEmpty && notes.isEmpty) {
       buf.writeln('No records stored.');
@@ -329,9 +341,15 @@ class AiService {
       );
     }
 
-    // Build vault context — use RAG-filtered items if available
-    final contextEntries = ragEntries ?? entries;
-    final contextNotes = ragNotes ?? notes;
+    // Build vault context — use RAG-filtered items if available.
+    // If RAG was used but found nothing relevant, fall back to full vault
+    // so the model can still answer broad questions like "how many secrets?"
+    final contextEntries = (ragEntries != null && ragEntries.isNotEmpty)
+        ? ragEntries
+        : entries;
+    final contextNotes = (ragNotes != null && ragNotes.isNotEmpty)
+        ? ragNotes
+        : notes;
     final vaultContext = _buildVaultContext(
       contextEntries,
       contextNotes,
@@ -390,7 +408,7 @@ class AiService {
               'messages': messages,
               'stream': false,
               'options': {
-                'temperature': 0.7,
+                'temperature': 0.2,
               },
             }),
           )
