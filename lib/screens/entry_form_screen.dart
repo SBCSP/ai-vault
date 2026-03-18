@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/vault_entry.dart';
@@ -31,6 +34,23 @@ class _EntryFormScreenState extends ConsumerState<EntryFormScreen> {
 
   bool get _isEditing => widget.entry != null;
   bool get _isSshKey => _category.toLowerCase() == 'ssh key';
+  bool get _isAwsSm => _category == 'AWS-SM';
+
+  /// Parse the password field as JSON key/value pairs for AWS-SM entries.
+  Map<String, String> _parseAwsSecretPairs() {
+    final raw = _passwordController.text;
+    if (raw.isEmpty) return {};
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map) {
+        return decoded.map((k, v) => MapEntry(k.toString(), v.toString()));
+      }
+    } catch (_) {
+      // Not valid JSON — treat as a single plain-text secret
+    }
+    // Fallback: single value under "value" key
+    return {'value': raw};
+  }
 
   @override
   void initState() {
@@ -122,7 +142,14 @@ class _EntryFormScreenState extends ConsumerState<EntryFormScreen> {
                     onChanged: (v) => setState(() => _category = v),
                   ),
                   // --- Category-specific fields ---
-                  if (_isSshKey) ...[
+                  if (_isAwsSm) ...[
+                    // AWS-SM: Key/Value pairs view
+                    const SizedBox(height: 16),
+                    _AwsSecretKeyValueCard(
+                      pairs: _parseAwsSecretPairs(),
+                      arn: _urlController.text,
+                    ),
+                  ] else if (_isSshKey) ...[
                     // SSH Key: Public Key + Private Key
                     const SizedBox(height: 16),
                     TextFormField(
@@ -332,7 +359,7 @@ class _EntryFormScreenState extends ConsumerState<EntryFormScreen> {
     final actions = ref.read(vaultActionsProvider);
     final now = DateTime.now();
 
-    final entry = VaultEntry(
+    var entry = VaultEntry(
       id: widget.entry?.id ?? '',
       title: _titleController.text.trim(),
       username: _usernameController.text.trim(),
@@ -349,11 +376,12 @@ class _EntryFormScreenState extends ConsumerState<EntryFormScreen> {
     if (_isEditing) {
       await actions.updateEntry(entry);
     } else {
-      await actions.addEntry(entry);
+      final newId = await actions.addEntry(entry);
+      entry = entry.copyWith(id: newId);
     }
 
-    // Fire-and-forget: update embedding index
-    ref.read(embeddingIndexProvider.notifier).indexEntry(entry);
+    // Await embedding index so it completes before navigating away
+    await ref.read(embeddingIndexProvider.notifier).indexEntry(entry);
 
     if (mounted) Navigator.pop(context);
   }
@@ -448,5 +476,271 @@ class _CategoryDropdown extends ConsumerWidget {
       await ref.read(categoryProvider.notifier).addCategory(result);
       onChanged(result);
     }
+  }
+}
+
+/// Displays AWS Secrets Manager key/value pairs as individual rows.
+class _AwsSecretKeyValueCard extends StatefulWidget {
+  final Map<String, String> pairs;
+  final String arn;
+
+  const _AwsSecretKeyValueCard({
+    required this.pairs,
+    required this.arn,
+  });
+
+  @override
+  State<_AwsSecretKeyValueCard> createState() =>
+      _AwsSecretKeyValueCardState();
+}
+
+class _AwsSecretKeyValueCardState extends State<_AwsSecretKeyValueCard> {
+  final Set<String> _revealedKeys = {};
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Header
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.orange.withValues(alpha: 0.08),
+            borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(12)),
+            border: Border.all(
+              color: Colors.orange.withValues(alpha: 0.3),
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.cloud_download,
+                  size: 18, color: Colors.orange.shade700),
+              const SizedBox(width: 8),
+              Text(
+                'AWS Secrets Manager',
+                style: theme.textTheme.labelLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.orange.shade700,
+                ),
+              ),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade700,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  '${widget.pairs.length} ${widget.pairs.length == 1 ? 'key' : 'keys'}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // Key/Value rows
+        Container(
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: Colors.orange.withValues(alpha: 0.3),
+            ),
+            borderRadius: const BorderRadius.vertical(
+                bottom: Radius.circular(12)),
+          ),
+          child: Column(
+            children: [
+              ...widget.pairs.entries.toList().asMap().entries.map(
+                (indexedEntry) {
+                  final i = indexedEntry.key;
+                  final pair = indexedEntry.value;
+                  final isLast =
+                      i == widget.pairs.length - 1;
+                  final isRevealed =
+                      _revealedKeys.contains(pair.key);
+
+                  return Container(
+                    decoration: BoxDecoration(
+                      border: isLast
+                          ? null
+                          : Border(
+                              bottom: BorderSide(
+                                color: theme.colorScheme.outlineVariant
+                                    .withValues(alpha: 0.5),
+                              ),
+                            ),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 10),
+                      child: Row(
+                        crossAxisAlignment:
+                            CrossAxisAlignment.center,
+                        children: [
+                          // Key label
+                          Icon(
+                            Icons.vpn_key,
+                            size: 14,
+                            color: theme
+                                .colorScheme.onSurfaceVariant,
+                          ),
+                          const SizedBox(width: 6),
+                          SizedBox(
+                            width: 140,
+                            child: Text(
+                              pair.key,
+                              style: theme.textTheme.bodySmall
+                                  ?.copyWith(
+                                fontFamily: 'monospace',
+                                fontWeight: FontWeight.w600,
+                                color: theme
+                                    .colorScheme.onSurfaceVariant,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          // Value
+                          Expanded(
+                            child: Container(
+                              padding:
+                                  const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 6),
+                              decoration: BoxDecoration(
+                                color: theme.colorScheme
+                                    .surfaceContainerHighest,
+                                borderRadius:
+                                    BorderRadius.circular(6),
+                              ),
+                              child: SelectableText(
+                                isRevealed
+                                    ? pair.value
+                                    : '\u2022' * 16,
+                                style: theme
+                                    .textTheme.bodySmall
+                                    ?.copyWith(
+                                  fontFamily: 'monospace',
+                                  letterSpacing:
+                                      isRevealed ? 0 : 2,
+                                ),
+                                maxLines: isRevealed ? null : 1,
+                              ),
+                            ),
+                          ),
+                          // Toggle visibility
+                          IconButton(
+                            icon: Icon(
+                              isRevealed
+                                  ? Icons.visibility_off
+                                  : Icons.visibility,
+                              size: 18,
+                            ),
+                            tooltip: isRevealed
+                                ? 'Hide value'
+                                : 'Show value',
+                            visualDensity:
+                                VisualDensity.compact,
+                            onPressed: () {
+                              setState(() {
+                                if (isRevealed) {
+                                  _revealedKeys
+                                      .remove(pair.key);
+                                } else {
+                                  _revealedKeys
+                                      .add(pair.key);
+                                }
+                              });
+                            },
+                          ),
+                          // Copy value
+                          IconButton(
+                            icon: const Icon(Icons.copy,
+                                size: 18),
+                            tooltip: 'Copy value',
+                            visualDensity:
+                                VisualDensity.compact,
+                            onPressed: () {
+                              Clipboard.setData(
+                                ClipboardData(
+                                    text: pair.value),
+                              );
+                              ScaffoldMessenger.of(context)
+                                  .showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    '${pair.key} copied to clipboard',
+                                  ),
+                                  duration: const Duration(
+                                      seconds: 2),
+                                ),
+                              );
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+
+        // ARN display
+        if (widget.arn.startsWith('arn:aws:')) ...[
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surfaceContainerHighest
+                  .withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.link, size: 14,
+                    color: theme.colorScheme.onSurfaceVariant),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: SelectableText(
+                    widget.arn,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      fontFamily: 'monospace',
+                      fontSize: 10,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.copy, size: 14),
+                  tooltip: 'Copy ARN',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () {
+                    Clipboard.setData(
+                        ClipboardData(text: widget.arn));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('ARN copied to clipboard'),
+                        duration: Duration(seconds: 2),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
   }
 }

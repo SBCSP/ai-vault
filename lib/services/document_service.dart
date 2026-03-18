@@ -65,6 +65,7 @@ class DocumentService {
 
   /// Read file content from disk. Returns null if file doesn't exist.
   /// Supports text files and PDFs (extracts text from PDFs).
+  /// Throws on permission/access errors so callers can handle them.
   static Future<String?> readFileContent(String filePath) async {
     final file = File(filePath);
     if (!await file.exists()) return null;
@@ -74,11 +75,9 @@ class DocumentService {
       return _extractPdfText(file);
     }
 
-    try {
-      return await file.readAsString();
-    } catch (_) {
-      return null;
-    }
+    // Let FileSystemException propagate so callers know about
+    // permission issues (e.g. macOS sandbox blocking access)
+    return await file.readAsString();
   }
 
   /// Extract text from a PDF file using Syncfusion PDF.

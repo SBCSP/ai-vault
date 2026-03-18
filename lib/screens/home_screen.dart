@@ -180,7 +180,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           child: AnimatedRotation(
             turns: _fabOpen ? 0.125 : 0,
             duration: const Duration(milliseconds: 200),
-            child: const Icon(Icons.add, size: 28),
+            child: const Icon(Icons.menu_open, size: 28),
           ),
         ),
       ],

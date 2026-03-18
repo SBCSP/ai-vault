@@ -47,6 +47,8 @@ dependencies:
   google_fonts: ^6.2.1
   file_picker: ^8.0.0
   syncfusion_flutter_pdf: ^33.1.44
+  url_launcher: ^6.2.5
+  crypto: ^3.0.3
 
 dev_dependencies:
   flutter_test:

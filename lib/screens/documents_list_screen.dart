@@ -1,8 +1,9 @@
+import 'dart:io';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
-
 import '../models/document.dart';
 import '../providers/auth_provider.dart';
 import '../providers/documents_provider.dart';
@@ -194,6 +195,17 @@ class _DocumentsListScreenState extends ConsumerState<DocumentsListScreen> {
             },
             theme: theme,
           ),
+          const SizedBox(height: 12),
+          _SpeedDialItem(
+            icon: Icons.sync,
+            label: 'Index All',
+            iconColor: Colors.deepPurple,
+            onTap: () {
+              setState(() => _fabOpen = false);
+              _indexAllDocuments();
+            },
+            theme: theme,
+          ),
           const SizedBox(height: 16),
         ],
         FloatingActionButton(
@@ -201,7 +213,7 @@ class _DocumentsListScreenState extends ConsumerState<DocumentsListScreen> {
           child: AnimatedRotation(
             turns: _fabOpen ? 0.125 : 0,
             duration: const Duration(milliseconds: 200),
-            child: const Icon(Icons.add, size: 28),
+            child: const Icon(Icons.menu_open, size: 28),
           ),
         ),
       ],
@@ -245,11 +257,27 @@ class _DocumentsListScreenState extends ConsumerState<DocumentsListScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Re-indexing "${doc.title}"...')),
     );
-    await ref.read(embeddingIndexProvider.notifier).indexDocument(doc);
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('"${doc.title}" re-indexed')),
+    try {
+      // Force re-index by clearing hash
+      final freshDoc = doc.copyWith(
+        contentHash: '',
+        clearLastIndexedAt: true,
       );
+      await ref.read(embeddingIndexProvider.notifier).indexDocument(freshDoc);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('"${doc.title}" re-indexed')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to index "${doc.title}": $e'),
+            backgroundColor: Colors.orange.shade700,
+          ),
+        );
+      }
     }
   }
 
@@ -416,6 +444,256 @@ class _DocumentsListScreenState extends ConsumerState<DocumentsListScreen> {
     _progressNotifier.value = current;
   }
 
+  Future<void> _indexAllDocuments() async {
+    var docs = ref.read(documentsProvider).valueOrNull ?? [];
+    if (docs.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No documents to index.')),
+      );
+      return;
+    }
+
+    final embeddingNotifier = ref.read(embeddingIndexProvider.notifier);
+    final actions = ref.read(documentActionsProvider);
+    var indexed = 0;
+    var failed = 0;
+    var added = 0;
+    var removed = 0;
+    // skippedNotFound tracked via 'failed' counter
+    String? lastError;
+    final progressNotifier = ValueNotifier<String>('Scanning mapped directories...');
+
+    // Show progress dialog
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return ValueListenableBuilder<String>(
+          valueListenable: progressNotifier,
+          builder: (context, status, _) {
+            return AlertDialog(
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const CircularProgressIndicator(),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Re-indexing All Documents',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    status,
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurfaceVariant,
+                        ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    // ── Step 1: Re-scan mapped directories for new/removed files ──
+
+    // Find all unique mapped root directories.
+    // Documents from directory mapping have tags like "dir:FolderName".
+    // We extract the dir tag, then walk up each doc's file path to find
+    // the root directory whose basename matches the tag.
+    final existingPaths = <String>{};
+    final mappedRoots = <String, String>{}; // rootPath → dirTag
+
+    for (final doc in docs) {
+      existingPaths.add(doc.filePath);
+
+      // Extract dir:XYZ tag
+      final tags = doc.tags.split(',').map((t) => t.trim());
+      for (final tag in tags) {
+        if (tag.startsWith('dir:')) {
+          final dirName = tag.substring(4);
+          // Walk up from file to find the root with matching name
+          var dir = p.dirname(doc.filePath);
+          while (dir != p.dirname(dir)) {
+            if (p.basename(dir) == dirName) {
+              mappedRoots[dir] = tag;
+              break;
+            }
+            dir = p.dirname(dir);
+          }
+          break; // Only need first dir: tag
+        }
+      }
+    }
+
+    // Scan each mapped root directory for new files
+    for (final entry in mappedRoots.entries) {
+      if (!mounted) break;
+      final rootPath = entry.key;
+      final dirTag = entry.value;
+      final dirName = p.basename(rootPath);
+
+      progressNotifier.value = 'Scanning $dirName...';
+
+      try {
+        final scanResult =
+            await DocumentService.scanDirectory(rootPath);
+
+        for (final file in scanResult.supportedFiles) {
+          if (existingPaths.contains(file.path)) continue;
+
+          // New file found — add it
+          final fileName = p.basename(file.path);
+          final dotIndex = fileName.lastIndexOf('.');
+          final title =
+              dotIndex > 0 ? fileName.substring(0, dotIndex) : fileName;
+          final fileType = DocumentService.detectFileType(file.path);
+
+          final newDoc = Document(
+            id: '',
+            title: title,
+            filePath: file.path,
+            fileType: fileType,
+            tags: dirTag,
+            createdAt: DateTime.now(),
+            updatedAt: DateTime.now(),
+          );
+
+          final docId = await actions.addDocument(newDoc);
+          existingPaths.add(file.path);
+          added++;
+
+          // Add to docs list so it gets indexed below
+          docs = [...docs, newDoc.copyWith(id: docId)];
+        }
+      } catch (_) {
+        // Directory may have been deleted or is inaccessible
+      }
+    }
+
+    // ── Step 2: Remove docs whose files no longer exist on disk ──
+
+    progressNotifier.value = 'Checking for removed files...';
+    final docsToRemove = <Document>[];
+
+    for (final doc in docs) {
+      if (!mounted) break;
+      final file = File(doc.filePath);
+      if (!await file.exists()) {
+        docsToRemove.add(doc);
+      }
+    }
+
+    for (final doc in docsToRemove) {
+      if (!mounted) break;
+      try {
+        await embeddingNotifier.removeDocument(doc.id);
+        await actions.deleteDocument(doc.id);
+        removed++;
+      } catch (_) {}
+    }
+
+    // Remove deleted docs from our working list
+    final removedIds = docsToRemove.map((d) => d.id).toSet();
+    docs = docs.where((d) => !removedIds.contains(d.id)).toList();
+
+    // ── Step 3: Clear embeddings and re-index all documents ──
+
+    progressNotifier.value = 'Clearing old embeddings...';
+    final total = docs.length;
+
+    for (final doc in docs) {
+      if (!mounted) break;
+      try {
+        await embeddingNotifier.removeDocument(doc.id);
+      } catch (_) {}
+    }
+
+    // Re-index each document — pass with cleared hash/timestamp
+    // so indexDocument doesn't skip unchanged content
+    for (var i = 0; i < docs.length; i++) {
+      if (!mounted) break;
+      final doc = docs[i];
+      progressNotifier.value =
+          'Indexing ${i + 1}/$total\n${doc.title}';
+      try {
+        // Clear contentHash and lastIndexedAt on the in-memory object
+        // so indexDocument won't skip it as "unchanged"
+        final freshDoc = doc.copyWith(
+          contentHash: '',
+          clearLastIndexedAt: true,
+        );
+        await embeddingNotifier.indexDocument(freshDoc);
+        indexed++;
+      } catch (e) {
+        failed++;
+        lastError = e.toString();
+        debugPrint('Index failed for "${doc.title}": $e');
+      }
+    }
+
+    progressNotifier.dispose();
+
+    // Dismiss progress dialog
+    if (mounted) {
+      Navigator.of(context, rootNavigator: true).pop();
+    }
+
+    if (mounted) {
+      final parts = <String>['$indexed indexed'];
+      if (added > 0) parts.add('$added new');
+      if (removed > 0) parts.add('$removed removed');
+      if (failed > 0) parts.add('$failed failed');
+
+      final message = parts.join(' \u2022 ');
+      final hasErrors = failed > 0;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    hasErrors ? Icons.warning_amber : Icons.check_circle,
+                    color: Colors.white,
+                    size: 18,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(message)),
+                ],
+              ),
+              if (hasErrors && lastError != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  lastError,
+                  style: const TextStyle(fontSize: 11, color: Colors.white70),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ],
+          ),
+          backgroundColor:
+              hasErrors ? Colors.orange.shade700 : Colors.green.shade700,
+          behavior: SnackBarBehavior.floating,
+          duration: Duration(seconds: hasErrors ? 8 : 5),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+    }
+  }
+
   final ValueNotifier<int> _progressNotifier = ValueNotifier<int>(0);
 }
 
@@ -425,12 +703,14 @@ class _SpeedDialItem extends StatelessWidget {
   final String label;
   final VoidCallback onTap;
   final ThemeData theme;
+  final Color? iconColor;
 
   const _SpeedDialItem({
     required this.icon,
     required this.label,
     required this.onTap,
     required this.theme,
+    this.iconColor,
   });
 
   @override
@@ -462,7 +742,9 @@ class _SpeedDialItem extends StatelessWidget {
         FloatingActionButton.small(
           heroTag: label,
           onPressed: onTap,
-          child: Icon(icon),
+          backgroundColor: iconColor,
+          child: Icon(icon,
+              color: iconColor != null ? Colors.white : null),
         ),
       ],
     );

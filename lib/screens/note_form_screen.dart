@@ -138,7 +138,7 @@ class _NoteFormScreenState extends ConsumerState<NoteFormScreen> {
     final actions = ref.read(noteActionsProvider);
     final now = DateTime.now();
 
-    final note = Note(
+    var note = Note(
       id: widget.note?.id ?? '',
       title: _titleController.text.trim(),
       body: _bodyController.text,
@@ -150,11 +150,12 @@ class _NoteFormScreenState extends ConsumerState<NoteFormScreen> {
     if (_isEditing) {
       await actions.updateNote(note);
     } else {
-      await actions.addNote(note);
+      final newId = await actions.addNote(note);
+      note = note.copyWith(id: newId);
     }
 
-    // Fire-and-forget: update embedding index
-    ref.read(embeddingIndexProvider.notifier).indexNote(note);
+    // Await embedding index so it completes before navigating away
+    await ref.read(embeddingIndexProvider.notifier).indexNote(note);
 
     if (mounted) Navigator.pop(context);
   }

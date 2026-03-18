@@ -5,8 +5,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/ai_provider.dart';
 import '../providers/api_server_provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/aws_provider.dart';
 import '../providers/category_provider.dart';
 import '../providers/lock_timeout_provider.dart';
+import 'aws_settings_screen.dart';
 import 'ollama_screen.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -91,6 +93,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
+                _buildAwsCard(theme, ref),
+                const SizedBox(height: 16),
                 const _LockTimeoutCard(),
                 const SizedBox(height: 16),
                 _CategoriesCard(),
@@ -147,6 +151,88 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAwsCard(ThemeData theme, WidgetRef ref) {
+    final aws = ref.watch(awsProvider);
+    final isConnected =
+        aws.status == AwsConnectionStatus.authenticated ||
+            aws.status == AwsConnectionStatus.syncing;
+
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(
+              builder: (_) => const AwsSettingsScreen()),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Icon(Icons.cloud_download,
+                  color: Colors.orange.shade700),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'AWS Secrets Manager',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      isConnected
+                          ? 'Connected — ${aws.selectedAccountId ?? 'no account'}'
+                          : 'Pull secrets from AWS via SSO',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: isConnected
+                            ? Colors.green.shade700
+                            : theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (isConnected)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.check_circle,
+                          size: 10, color: Colors.green),
+                      SizedBox(width: 3),
+                      Text(
+                        'SSO',
+                        style: TextStyle(
+                          color: Colors.green,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              const SizedBox(width: 8),
+              Icon(
+                Icons.arrow_forward_ios,
+                size: 16,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ],
           ),
         ),
       ),

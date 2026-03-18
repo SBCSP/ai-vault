@@ -186,9 +186,12 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
   }
 
   /// Index all chunks for a document. Reads file, chunks it, embeds each.
+  /// Throws if the file cannot be read (permission error, missing file, etc.)
   Future<void> indexDocument(model.Document doc) async {
     final content = await DocumentService.readFileContent(doc.filePath);
-    if (content == null) return;
+    if (content == null) {
+      throw Exception('File not found: ${doc.filePath}');
+    }
 
     final fileHash = EmbeddingService.computeContentHash(content);
 
@@ -389,7 +392,12 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
     for (final doc in docsList) {
       if (!mounted) return;
 
-      final content = await DocumentService.readFileContent(doc.filePath);
+      String? content;
+      try {
+        content = await DocumentService.readFileContent(doc.filePath);
+      } catch (_) {
+        // File may be inaccessible — skip this document
+      }
       if (content != null) {
         final fileHash = EmbeddingService.computeContentHash(content);
         final chunks = DocumentService.chunkText(content);
