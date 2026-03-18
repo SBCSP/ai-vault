@@ -27,7 +27,13 @@
 1. Download the latest `.dmg` from the [**Releases page**](https://github.com/SBCSP/ai-vault/releases/latest)
 2. Open the `.dmg` file
 3. Drag **AI VaultIO** into your **Applications** folder
-4. Launch from Applications (right-click → **Open** on first launch to bypass Gatekeeper)
+4. **First launch — bypass Gatekeeper** (the app is not Apple-notarized):
+   - Open **System Settings → Privacy & Security**
+   - Scroll down to find _"AI VaultIO" was blocked_ and click **Open Anyway**
+   - Or run this in Terminal:
+     ```bash
+     xattr -cr /Applications/AI\ VaultIO.app
+     ```
 
 > **Requires:** macOS 12+ (Monterey or later) and [Ollama](https://ollama.com) for AI features.
 
