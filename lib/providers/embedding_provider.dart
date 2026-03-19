@@ -8,12 +8,14 @@ import 'package:uuid/uuid.dart';
 import '../database/database.dart';
 import '../models/chat_session.dart' as model;
 import '../models/document.dart' as model;
+import '../models/idea.dart' as model;
 import '../models/note.dart' as model;
 import '../models/vault_entry.dart' as model;
 import '../services/document_service.dart';
 import '../services/embedding_service.dart';
 import 'ai_provider.dart';
 import 'documents_provider.dart';
+import 'ideas_provider.dart';
 import 'notes_provider.dart';
 import 'vault_provider.dart';
 
@@ -185,6 +187,40 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
     await refreshStats();
   }
 
+  /// Index a single idea. Skips if content hash is unchanged.
+  Future<void> indexIdea(model.Idea idea) async {
+    final text = EmbeddingService.buildIdeaText(idea);
+    final hash = EmbeddingService.computeContentHash(text);
+
+    final existing = await _db.getEmbeddingBySourceId(idea.id);
+    if (existing != null &&
+        existing.contentHash == hash &&
+        existing.modelName == _modelName) {
+      return;
+    }
+
+    final vector = await _service.generateEmbedding(text);
+    if (vector == null) return;
+
+    await _db.upsertEmbedding(EmbeddingsCompanion(
+      id: Value(existing?.id ?? _uuid.v4()),
+      sourceId: Value(idea.id),
+      sourceType: const Value('idea'),
+      embedding: Value(jsonEncode(vector)),
+      modelName: Value(_modelName),
+      contentHash: Value(hash),
+      createdAt: Value(DateTime.now()),
+    ));
+
+    await refreshStats();
+  }
+
+  /// Remove embedding when an idea is deleted.
+  Future<void> removeIdea(String id) async {
+    await _db.deleteEmbeddingBySourceId(id);
+    await refreshStats();
+  }
+
   /// Index all chunks for a document. Reads file, chunks it, embeds each.
   /// Throws if the file cannot be read (permission error, missing file, etc.)
   Future<void> indexDocument(model.Document doc) async {
@@ -314,6 +350,12 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
         ) ??
         [];
 
+    final ideasAsync = _ref.read(ideasProvider);
+    final ideaList = ideasAsync.whenOrNull<List<model.Idea>>(
+          data: (data) => data,
+        ) ??
+        [];
+
     final docsAsync = _ref.read(documentsProvider);
     final docsList = docsAsync.whenOrNull<List<model.Document>>(
           data: (data) => data,
@@ -323,8 +365,8 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
     // Include indexed chat sessions in re-index
     final indexedSessions = await _db.getIndexedChatSessions();
 
-    final total = entries.length + notesList.length + docsList.length +
-        indexedSessions.length;
+    final total = entries.length + notesList.length + ideaList.length +
+        docsList.length + indexedSessions.length;
     state = EmbeddingIndexState(
       isIndexing: true,
       totalItems: total,
@@ -375,6 +417,30 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
           id: Value(_uuid.v4()),
           sourceId: Value(note.id),
           sourceType: const Value('note'),
+          embedding: Value(jsonEncode(vector)),
+          modelName: Value(_modelName),
+          contentHash: Value(hash),
+          createdAt: Value(DateTime.now()),
+        ));
+      }
+
+      processed++;
+      if (mounted) {
+        state = state.copyWith(processedItems: processed);
+      }
+    }
+
+    for (final idea in ideaList) {
+      if (!mounted) return;
+      final text = EmbeddingService.buildIdeaText(idea);
+      final hash = EmbeddingService.computeContentHash(text);
+      final vector = await _service.generateEmbedding(text);
+
+      if (vector != null) {
+        await _db.upsertEmbedding(EmbeddingsCompanion(
+          id: Value(_uuid.v4()),
+          sourceId: Value(idea.id),
+          sourceType: const Value('idea'),
           embedding: Value(jsonEncode(vector)),
           modelName: Value(_modelName),
           contentHash: Value(hash),

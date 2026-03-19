@@ -5,6 +5,7 @@ import 'package:uuid/uuid.dart';
 import '../database/database.dart';
 import '../models/vault_entry.dart' as model;
 import '../services/encryption_service.dart';
+import 'audit_provider.dart';
 import 'auth_provider.dart';
 
 final databaseProvider = Provider<AppDatabase>((ref) {
@@ -25,6 +26,7 @@ final vaultActionsProvider = Provider<VaultActions>((ref) {
   return VaultActions(
     db: ref.read(databaseProvider),
     encryption: ref.read(encryptionServiceProvider),
+    audit: ref.read(auditLoggerProvider),
   );
 });
 
@@ -48,11 +50,16 @@ model.VaultEntry _decryptEntry(VaultEntry e, EncryptionService encryption) {
 class VaultActions {
   final AppDatabase _db;
   final EncryptionService _encryption;
+  final AuditLogger _audit;
   static const _uuid = Uuid();
 
-  VaultActions({required AppDatabase db, required EncryptionService encryption})
-      : _db = db,
-        _encryption = encryption;
+  VaultActions({
+    required AppDatabase db,
+    required EncryptionService encryption,
+    required AuditLogger audit,
+  })  : _db = db,
+        _encryption = encryption,
+        _audit = audit;
 
   Future<String> addEntry(model.VaultEntry entry) async {
     final now = DateTime.now();
@@ -78,6 +85,14 @@ class VaultActions {
       expiresAt: Value(entry.expiresAt),
     ));
 
+    await _audit.log(
+      action: AuditAction.secretCreated,
+      targetType: 'secret',
+      targetId: id,
+      targetName: entry.title,
+      details: 'Category: ${entry.category}',
+    );
+
     return id;
   }
 
@@ -100,9 +115,21 @@ class VaultActions {
       updatedAt: Value(DateTime.now()),
       expiresAt: Value(entry.expiresAt),
     ));
+
+    await _audit.log(
+      action: AuditAction.secretUpdated,
+      targetType: 'secret',
+      targetId: entry.id,
+      targetName: entry.title,
+    );
   }
 
   Future<void> deleteEntry(String id) async {
+    await _audit.log(
+      action: AuditAction.secretDeleted,
+      targetType: 'secret',
+      targetId: id,
+    );
     await _db.deleteEntry(id);
   }
 }

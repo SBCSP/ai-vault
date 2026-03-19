@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'package:pointycastle/digests/sha256.dart';
 
+import '../models/idea.dart';
 import '../models/note.dart';
 import '../models/vault_entry.dart';
 
@@ -84,6 +85,18 @@ class EmbeddingService {
     final parts = <String>[
       note.title,
       if (note.tags.isNotEmpty) 'Tags: ${note.tags}',
+      if (bodyPreview.isNotEmpty) bodyPreview,
+    ];
+    return parts.join('\n');
+  }
+
+  /// Build embeddable text for an idea.
+  static String buildIdeaText(Idea idea) {
+    final bodyPreview =
+        idea.body.length > 2000 ? idea.body.substring(0, 2000) : idea.body;
+    final parts = <String>[
+      'Idea: ${idea.title}',
+      if (idea.tags.isNotEmpty) 'Tags: ${idea.tags}',
       if (bodyPreview.isNotEmpty) bodyPreview,
     ];
     return parts.join('\n');

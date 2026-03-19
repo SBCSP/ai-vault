@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 
 import '../database/database.dart' as db;
 import '../models/chat_session.dart';
+import '../models/idea.dart';
 import '../models/note.dart';
 import '../models/vault_entry.dart';
 
@@ -133,6 +134,7 @@ class AiService {
   String _buildVaultContext(
     List<VaultEntry> entries,
     List<Note> notes, {
+    List<Idea>? ideas,
     List<db.DocumentChunk>? documentChunks,
     List<String> documentTitles = const [],
     List<ChatSession>? chatSessions,
@@ -141,7 +143,8 @@ class AiService {
     buf.writeln('=== USER RECORDS ===');
 
     // Provide explicit counts so the model can answer "how many" accurately
-    buf.writeln('SUMMARY: ${entries.length} secret(s), ${notes.length} note(s)');
+    final ideaCount = ideas?.length ?? 0;
+    buf.writeln('SUMMARY: ${entries.length} secret(s), ${notes.length} note(s), $ideaCount idea(s)');
     if (documentChunks != null && documentChunks.isNotEmpty) {
       buf.writeln('  + ${documentChunks.length} document chunk(s) from ${documentTitles.length} document(s)');
     }
@@ -199,6 +202,23 @@ class AiService {
       }
     }
 
+    if (ideas != null && ideas.isNotEmpty) {
+      buf.writeln('--- IDEAS (${ideas.length}) ---');
+      for (final i in ideas) {
+        buf.writeln('Idea: "${i.title}"');
+        if (i.tags.isNotEmpty) buf.writeln('  Tags: ${i.tags}');
+        if (i.body.isNotEmpty) {
+          final preview = i.body.length > 300
+              ? '${i.body.substring(0, 300)}...'
+              : i.body;
+          buf.writeln('  Content: $preview');
+        }
+        final dateStr = '${i.updatedAt.year}-${i.updatedAt.month.toString().padLeft(2, '0')}-${i.updatedAt.day.toString().padLeft(2, '0')}';
+        buf.writeln('  Modified: $dateStr');
+        buf.writeln();
+      }
+    }
+
     if (documentChunks != null && documentChunks.isNotEmpty) {
       buf.writeln(
           '--- DOCUMENT EXCERPTS (${documentChunks.length} chunks) ---');
@@ -244,10 +264,11 @@ class AiService {
 
   /// Parse the LLM response for [[Item Name]] references and match them
   /// against entries and notes to determine which cards to show.
-  ({List<VaultEntry> entries, List<Note> notes}) _extractReferencedItems(
+  ({List<VaultEntry> entries, List<Note> notes, List<Idea> ideas}) _extractReferencedItems(
     String response,
     List<VaultEntry> allEntries,
     List<Note> allNotes,
+    List<Idea> allIdeas,
   ) {
     final bracketPattern = RegExp(r'\[\[(.+?)\]\]');
     final matches = bracketPattern.allMatches(response);
@@ -256,7 +277,7 @@ class AiService {
         .toSet();
 
     if (referencedNames.isEmpty) {
-      return (entries: <VaultEntry>[], notes: <Note>[]);
+      return (entries: <VaultEntry>[], notes: <Note>[], ideas: <Idea>[]);
     }
 
     final matchedEntries = allEntries.where((e) {
@@ -275,13 +296,22 @@ class AiService {
           name.contains(titleLower));
     }).toList();
 
-    return (entries: matchedEntries, notes: matchedNotes);
+    final matchedIdeas = allIdeas.where((i) {
+      final titleLower = i.title.toLowerCase();
+      return referencedNames.any((name) =>
+          titleLower == name ||
+          titleLower.contains(name) ||
+          name.contains(titleLower));
+    }).toList();
+
+    return (entries: matchedEntries, notes: matchedNotes, ideas: matchedIdeas);
   }
 
   /// Build a human-readable summary of RAG sources used.
   List<String> _buildRagSourceSummary(
     List<VaultEntry>? ragEntries,
     List<Note>? ragNotes,
+    List<Idea>? ragIdeas,
     List<db.DocumentChunk>? ragChunks,
     List<String> documentTitles,
     List<ChatSession>? chatSessions,
@@ -292,6 +322,9 @@ class AiService {
     }
     if (ragNotes != null && ragNotes.isNotEmpty) {
       sources.add('${ragNotes.length} note${ragNotes.length == 1 ? '' : 's'}');
+    }
+    if (ragIdeas != null && ragIdeas.isNotEmpty) {
+      sources.add('${ragIdeas.length} idea${ragIdeas.length == 1 ? '' : 's'}');
     }
     if (ragChunks != null && ragChunks.isNotEmpty) {
       final chunkCount = ragChunks.length;
@@ -323,9 +356,11 @@ class AiService {
     String query,
     List<ChatMessage> history,
     List<VaultEntry> entries,
-    List<Note> notes, {
+    List<Note> notes,
+    List<Idea> ideas, {
     List<VaultEntry>? ragEntries,
     List<Note>? ragNotes,
+    List<Idea>? ragIdeas,
     List<db.DocumentChunk>? ragChunks,
     List<String> ragDocumentTitles = const [],
     List<ChatSession>? ragChatSessions,
@@ -350,9 +385,13 @@ class AiService {
     final contextNotes = (ragNotes != null && ragNotes.isNotEmpty)
         ? ragNotes
         : notes;
+    final contextIdeas = (ragIdeas != null && ragIdeas.isNotEmpty)
+        ? ragIdeas
+        : ideas;
     final vaultContext = _buildVaultContext(
       contextEntries,
       contextNotes,
+      ideas: contextIdeas,
       documentChunks: ragChunks,
       documentTitles: ragDocumentTitles,
       chatSessions: ragChatSessions,
@@ -380,18 +419,19 @@ class AiService {
     }
 
     // Extract [[referenced items]] from the response
-    final referenced = _extractReferencedItems(response, entries, notes);
+    final referenced = _extractReferencedItems(response, entries, notes, ideas);
     final cleanText = _cleanResponse(response);
 
     return ChatResponse(
       text: cleanText,
       matchedEntries: referenced.entries,
       matchedNotes: referenced.notes,
+      matchedIdeas: referenced.ideas,
       aiOnline: true,
-      isVaultResult: referenced.entries.isNotEmpty || referenced.notes.isNotEmpty,
+      isVaultResult: referenced.entries.isNotEmpty || referenced.notes.isNotEmpty || referenced.ideas.isNotEmpty,
       ragUsed: ragUsed,
       ragSources: _buildRagSourceSummary(
-        ragEntries, ragNotes, ragChunks, ragDocumentTitles, ragChatSessions,
+        ragEntries, ragNotes, ragIdeas, ragChunks, ragDocumentTitles, ragChatSessions,
       ),
     );
   }
@@ -447,6 +487,7 @@ class ChatMessage {
   final bool isUser;
   final List<VaultEntry> matchedEntries;
   final List<Note> matchedNotes;
+  final List<Idea> matchedIdeas;
   final bool aiOnline;
   final bool isVaultResult;
   final bool ragUsed;
@@ -457,6 +498,7 @@ class ChatMessage {
     required this.isUser,
     this.matchedEntries = const [],
     this.matchedNotes = const [],
+    this.matchedIdeas = const [],
     this.aiOnline = true,
     this.isVaultResult = false,
     this.ragUsed = false,
@@ -469,6 +511,7 @@ class ChatResponse {
   final String text;
   final List<VaultEntry> matchedEntries;
   final List<Note> matchedNotes;
+  final List<Idea> matchedIdeas;
   final bool aiOnline;
   final bool isVaultResult;
   final bool ragUsed;
@@ -478,6 +521,7 @@ class ChatResponse {
     required this.text,
     this.matchedEntries = const [],
     this.matchedNotes = const [],
+    this.matchedIdeas = const [],
     this.aiOnline = true,
     this.isVaultResult = false,
     this.ragUsed = false,

@@ -8,15 +8,15 @@ import '../models/vault_entry.dart';
 class VaultEntryTile extends StatelessWidget {
   final VaultEntry entry;
   final bool isHighlighted;
-  final VoidCallback onTap;
-  final VoidCallback onDelete;
+  final VoidCallback? onTap;
+  final VoidCallback? onDelete;
 
   const VaultEntryTile({
     super.key,
     required this.entry,
     this.isHighlighted = false,
-    required this.onTap,
-    required this.onDelete,
+    this.onTap,
+    this.onDelete,
   });
 
   String _awsSmSubtitle(VaultEntry entry) {
@@ -57,11 +57,13 @@ class VaultEntryTile extends StatelessWidget {
 
     return Dismissible(
       key: Key(entry.id),
-      direction: DismissDirection.endToStart,
+      direction: onDelete != null
+          ? DismissDirection.endToStart
+          : DismissDirection.none,
       confirmDismiss: (_) async {
         return await _showDeleteConfirmation(context, entry);
       },
-      onDismissed: (_) => onDelete(),
+      onDismissed: (_) => onDelete?.call(),
       background: Container(
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 20),
@@ -145,18 +147,19 @@ class VaultEntryTile extends StatelessWidget {
                     );
                   },
                 ),
-              IconButton(
-                icon: Icon(
-                  Icons.delete_outline,
-                  color: theme.colorScheme.error,
+              if (onDelete != null)
+                IconButton(
+                  icon: Icon(
+                    Icons.delete_outline,
+                    color: theme.colorScheme.error,
+                  ),
+                  tooltip: 'Delete',
+                  onPressed: () async {
+                    final confirmed =
+                        await _showDeleteConfirmation(context, entry);
+                    if (confirmed == true) onDelete!();
+                  },
                 ),
-                tooltip: 'Delete',
-                onPressed: () async {
-                  final confirmed =
-                      await _showDeleteConfirmation(context, entry);
-                  if (confirmed == true) onDelete();
-                },
-              ),
             ],
           ),
           onTap: onTap,

@@ -8,6 +8,7 @@ import '../providers/auth_provider.dart';
 import '../providers/aws_provider.dart';
 import '../providers/category_provider.dart';
 import '../providers/lock_timeout_provider.dart';
+import 'audit_log_screen.dart';
 import 'aws_settings_screen.dart';
 import 'ollama_screen.dart';
 
@@ -94,6 +95,56 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
                 const SizedBox(height: 16),
                 _buildAwsCard(theme, ref),
+                const SizedBox(height: 16),
+                // Audit Log link card
+                Card(
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const AuditLogScreen()),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
+                        children: [
+                          Icon(Icons.history,
+                              color: theme.colorScheme.primary),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment:
+                                  CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Audit Log',
+                                  style: theme.textTheme.titleMedium
+                                      ?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                Text(
+                                  'View all activity and changes',
+                                  style:
+                                      theme.textTheme.bodySmall?.copyWith(
+                                    color: theme
+                                        .colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Icon(
+                            Icons.arrow_forward_ios,
+                            size: 16,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
                 const SizedBox(height: 16),
                 const _LockTimeoutCard(),
                 const SizedBox(height: 16),

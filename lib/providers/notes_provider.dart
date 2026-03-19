@@ -5,6 +5,7 @@ import 'package:uuid/uuid.dart';
 import '../database/database.dart' as db;
 import '../models/note.dart' as model;
 import '../services/encryption_service.dart';
+import 'audit_provider.dart';
 import 'auth_provider.dart';
 import 'vault_provider.dart';
 
@@ -21,6 +22,7 @@ final noteActionsProvider = Provider<NoteActions>((ref) {
   return NoteActions(
     db: ref.read(databaseProvider),
     encryption: ref.read(encryptionServiceProvider),
+    audit: ref.read(auditLoggerProvider),
   );
 });
 
@@ -38,13 +40,16 @@ model.Note _decryptNote(db.Note n, EncryptionService encryption) {
 class NoteActions {
   final db.AppDatabase _db;
   final EncryptionService _encryption;
+  final AuditLogger _audit;
   static const _uuid = Uuid();
 
   NoteActions({
     required db.AppDatabase db,
     required EncryptionService encryption,
+    required AuditLogger audit,
   })  : _db = db,
-        _encryption = encryption;
+        _encryption = encryption,
+        _audit = audit;
 
   Future<String> addNote(model.Note note) async {
     final now = DateTime.now();
@@ -61,6 +66,13 @@ class NoteActions {
       updatedAt: now,
     ));
 
+    await _audit.log(
+      action: AuditAction.noteCreated,
+      targetType: 'note',
+      targetId: id,
+      targetName: note.title,
+    );
+
     return id;
   }
 
@@ -74,9 +86,21 @@ class NoteActions {
       tags: Value(note.tags),
       updatedAt: Value(DateTime.now()),
     ));
+
+    await _audit.log(
+      action: AuditAction.noteUpdated,
+      targetType: 'note',
+      targetId: note.id,
+      targetName: note.title,
+    );
   }
 
   Future<void> deleteNote(String id) async {
+    await _audit.log(
+      action: AuditAction.noteDeleted,
+      targetType: 'note',
+      targetId: id,
+    );
     await _db.deleteNote(id);
   }
 }

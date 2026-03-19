@@ -7,6 +7,7 @@ import '../models/note.dart';
 import '../providers/ai_provider.dart';
 import '../providers/chat_history_provider.dart';
 import '../providers/embedding_provider.dart';
+import '../providers/secrets_lock_provider.dart';
 import '../screens/chat_history_screen.dart';
 import '../screens/chat_screen.dart';
 import '../services/ai_service.dart';
@@ -275,6 +276,8 @@ class _AiChatWidgetState extends ConsumerState<AiChatWidget> {
                         ),
                       ),
                     ),
+                    const SizedBox(width: 6),
+                    _SecretsLockBadge(),
                   ],
                 ),
                 Row(
@@ -937,5 +940,47 @@ class _SecretEntryCardState extends State<_SecretEntryCard> {
       default:
         return Icons.lock;
     }
+  }
+}
+
+class _SecretsLockBadge extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final locked = ref.watch(secretsLockProvider);
+    final theme = Theme.of(context);
+
+    return Tooltip(
+      message: locked
+          ? 'Secrets locked — AI cannot access secrets'
+          : 'Secrets unlocked — AI has access to secrets',
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+        decoration: BoxDecoration(
+          color: locked
+              ? Colors.red.withValues(alpha: 0.12)
+              : Colors.green.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              locked ? Icons.lock : Icons.lock_open,
+              size: 10,
+              color: locked ? Colors.red : Colors.green.shade700,
+            ),
+            const SizedBox(width: 2),
+            Text(
+              locked ? 'Locked' : 'Open',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: locked ? Colors.red : Colors.green.shade700,
+                fontWeight: FontWeight.w600,
+                fontSize: 9,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
