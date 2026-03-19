@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/vault_entry.dart';
 import '../services/aws_secrets_manager_service.dart';
 import '../services/aws_sso_service.dart';
+import 'audit_provider.dart';
 import 'embedding_provider.dart';
 import 'vault_provider.dart';
 
@@ -220,6 +221,11 @@ class AwsNotifier extends StateNotifier<AwsState> {
         statusMessage: '${accounts.length} account(s) found',
       );
 
+      await _ref.read(auditLoggerProvider).log(
+        action: AuditAction.awsConnected,
+        details: '${accounts.length} account(s) found',
+      );
+
       // Auto-select if only one account
       if (accounts.length == 1) {
         await selectAccount(accounts.first.accountId);
@@ -406,6 +412,11 @@ class AwsNotifier extends StateNotifier<AwsState> {
         lastSyncResult: result,
       );
 
+      await _ref.read(auditLoggerProvider).log(
+        action: AuditAction.awsSyncCompleted,
+        details: '${result.created} created, ${result.updated} updated, ${result.failed} failed',
+      );
+
       smService.dispose();
       return result;
     } on AwsSsoException catch (e) {
@@ -439,6 +450,8 @@ class AwsNotifier extends StateNotifier<AwsState> {
   void disconnect() {
     _ssoService?.disconnect();
     _ssoService = null;
+
+    _ref.read(auditLoggerProvider).log(action: AuditAction.awsDisconnected);
 
     state = state.copyWith(
       status: AwsConnectionStatus.disconnected,

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/auth_provider.dart';
 import '../providers/aws_provider.dart';
 import '../providers/embedding_provider.dart';
+import '../providers/secrets_lock_provider.dart';
 import '../providers/vault_provider.dart';
 import '../widgets/vault_entry_tile.dart';
 import 'aws_settings_screen.dart';
@@ -30,12 +31,22 @@ class _VaultListScreenState extends ConsumerState<VaultListScreen> {
   @override
   Widget build(BuildContext context) {
     final entriesAsync = ref.watch(vaultEntriesProvider);
+    final secretsLocked = ref.watch(secretsLockProvider);
     final theme = Theme.of(context);
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('All Secrets'),
         actions: [
+          IconButton(
+            icon: Icon(
+              secretsLocked ? Icons.lock : Icons.lock_open,
+              color: secretsLocked ? Colors.red : null,
+            ),
+            tooltip: secretsLocked ? 'Unlock secrets' : 'Lock secrets',
+            onPressed: () =>
+                ref.read(secretsLockProvider.notifier).toggle(),
+          ),
           IconButton(
             icon: const Icon(Icons.lock),
             tooltip: 'Lock vault',
@@ -47,6 +58,28 @@ class _VaultListScreenState extends ConsumerState<VaultListScreen> {
         children: [
           Column(
             children: [
+              if (secretsLocked)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 8),
+                  color: Colors.red.withValues(alpha: 0.1),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.lock, size: 16, color: Colors.red),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Secrets are locked — viewing only. Unlock to add, edit, or delete.',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: Colors.red,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               // Simple local search
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
@@ -130,21 +163,25 @@ class _VaultListScreenState extends ConsumerState<VaultListScreen> {
                         final entry = filtered[index];
                         return VaultEntryTile(
                           entry: entry,
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) =>
-                                  EntryFormScreen(entry: entry),
-                            ),
-                          ),
-                          onDelete: () {
-                            ref
-                                .read(vaultActionsProvider)
-                                .deleteEntry(entry.id);
-                            ref
-                                .read(embeddingIndexProvider.notifier)
-                                .removeEntry(entry.id);
-                          },
+                          onTap: secretsLocked
+                              ? null
+                              : () => Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          EntryFormScreen(entry: entry),
+                                    ),
+                                  ),
+                          onDelete: secretsLocked
+                              ? null
+                              : () {
+                                  ref
+                                      .read(vaultActionsProvider)
+                                      .deleteEntry(entry.id);
+                                  ref
+                                      .read(embeddingIndexProvider.notifier)
+                                      .removeEntry(entry.id);
+                                },
                         );
                       },
                     );
@@ -162,7 +199,7 @@ class _VaultListScreenState extends ConsumerState<VaultListScreen> {
             ),
         ],
       ),
-      floatingActionButton: _buildSpeedDial(context),
+      floatingActionButton: secretsLocked ? null : _buildSpeedDial(context),
     );
   }
 

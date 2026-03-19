@@ -7,13 +7,17 @@ import '../providers/ai_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/chat_history_provider.dart';
 import '../providers/documents_provider.dart';
+import '../providers/ideas_provider.dart';
 import '../providers/notes_provider.dart';
+import '../providers/secrets_lock_provider.dart';
 import '../providers/vault_provider.dart';
 import '../services/ai_service.dart';
 import '../widgets/ai_search_bar.dart';
 import 'document_form_screen.dart';
 import 'documents_list_screen.dart';
 import 'entry_form_screen.dart';
+import 'idea_form_screen.dart';
+import 'ideas_list_screen.dart';
 import 'note_form_screen.dart';
 import 'notes_list_screen.dart';
 import 'ollama_screen.dart';
@@ -38,6 +42,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   Widget build(BuildContext context) {
     final entriesAsync = ref.watch(vaultEntriesProvider);
     final notesAsync = ref.watch(notesProvider);
+    final ideasAsync = ref.watch(ideasProvider);
     final docsAsync = ref.watch(documentsProvider);
     final chatsAsync = ref.watch(chatSessionsProvider);
     final aiService = ref.watch(aiServiceProvider);
@@ -46,6 +51,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       appBar: AppBar(
         title: const Text('AI VaultIO'),
         actions: [
+          IconButton(
+            icon: Icon(
+              ref.watch(secretsLockProvider) ? Icons.lock : Icons.lock_open,
+              color: ref.watch(secretsLockProvider) ? Colors.red : null,
+              size: 20,
+            ),
+            tooltip: ref.watch(secretsLockProvider)
+                ? 'Unlock secrets'
+                : 'Lock secrets',
+            onPressed: () =>
+                ref.read(secretsLockProvider.notifier).toggle(),
+          ),
           IconButton(
             icon: const Icon(Icons.settings),
             onPressed: () => Navigator.push(
@@ -67,6 +84,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             error: (e, _) => Center(child: Text('Error: $e')),
             data: (entries) {
               final notes = notesAsync.valueOrNull ?? [];
+              final ideaCount = ideasAsync.valueOrNull?.length ?? 0;
               final docCount = docsAsync.valueOrNull?.length ?? 0;
               final chatCount = chatsAsync.valueOrNull?.length ?? 0;
               return SingleChildScrollView(
@@ -85,6 +103,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                         _StatsRow(
                           entries: entries,
                           notes: notes,
+                          ideaCount: ideaCount,
                           documentCount: docCount,
                           chatCount: chatCount,
                           aiService: aiService,
@@ -124,6 +143,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
   Widget _buildSpeedDial(BuildContext context) {
     final theme = Theme.of(context);
+    final secretsLocked = ref.watch(secretsLockProvider);
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -131,20 +151,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       children: [
         // Menu items (visible when open)
         if (_fabOpen) ...[
-          _SpeedDialItem(
-            icon: Icons.key,
-            label: 'Add Secret',
-            onTap: () {
-              setState(() => _fabOpen = false);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                    builder: (_) => const EntryFormScreen()),
-              );
-            },
-            theme: theme,
-          ),
-          const SizedBox(height: 12),
+          if (!secretsLocked) ...[
+            _SpeedDialItem(
+              icon: Icons.key,
+              label: 'Add Secret',
+              onTap: () {
+                setState(() => _fabOpen = false);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const EntryFormScreen()),
+                );
+              },
+              theme: theme,
+            ),
+            const SizedBox(height: 12),
+          ],
           _SpeedDialItem(
             icon: Icons.note_add,
             label: 'New Note',
@@ -154,6 +176,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 context,
                 MaterialPageRoute(
                     builder: (_) => const NoteFormScreen()),
+              );
+            },
+            theme: theme,
+          ),
+          const SizedBox(height: 12),
+          _SpeedDialItem(
+            icon: Icons.lightbulb,
+            label: 'New Idea',
+            onTap: () {
+              setState(() => _fabOpen = false);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => const IdeaFormScreen()),
               );
             },
             theme: theme,
@@ -242,6 +278,7 @@ class _SpeedDialItem extends StatelessWidget {
 class _StatsRow extends StatefulWidget {
   final List<VaultEntry> entries;
   final List<Note> notes;
+  final int ideaCount;
   final int documentCount;
   final int chatCount;
   final dynamic aiService;
@@ -249,6 +286,7 @@ class _StatsRow extends StatefulWidget {
   const _StatsRow({
     required this.entries,
     required this.notes,
+    required this.ideaCount,
     required this.documentCount,
     required this.chatCount,
     required this.aiService,
@@ -327,6 +365,16 @@ class _StatsRowState extends State<_StatsRow> {
               onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => const NotesListScreen()),
+              ),
+            ),
+            _DashboardCard(
+              icon: Icons.lightbulb,
+              iconColor: Colors.orange.shade600,
+              label: 'Ideas',
+              value: '${widget.ideaCount}',
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const IdeasListScreen()),
               ),
             ),
             _DashboardCard(

@@ -6,12 +6,15 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../database/database.dart' as db;
 import '../models/chat_session.dart';
+import '../models/idea.dart';
 import '../models/note.dart';
 import '../models/vault_entry.dart';
 import '../services/ai_service.dart';
 import '../services/embedding_service.dart';
 import 'embedding_provider.dart';
+import 'ideas_provider.dart';
 import 'notes_provider.dart';
+import 'secrets_lock_provider.dart';
 import 'vault_provider.dart';
 
 final aiServiceProvider =
@@ -112,14 +115,27 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
     try {
       final aiService = _ref.read(aiServiceProvider);
 
-      final entriesAsync = _ref.read(vaultEntriesProvider);
-      final entries = entriesAsync.whenOrNull<List<VaultEntry>>(
+      final secretsLocked = _ref.read(secretsLockProvider);
+
+      final List<VaultEntry> entries;
+      if (secretsLocked) {
+        entries = [];
+      } else {
+        final entriesAsync = _ref.read(vaultEntriesProvider);
+        entries = entriesAsync.whenOrNull<List<VaultEntry>>(
+              data: (data) => data,
+            ) ??
+            [];
+      }
+
+      final notesAsync = _ref.read(notesProvider);
+      final notesList = notesAsync.whenOrNull<List<Note>>(
             data: (data) => data,
           ) ??
           [];
 
-      final notesAsync = _ref.read(notesProvider);
-      final notesList = notesAsync.whenOrNull<List<Note>>(
+      final ideasAsync = _ref.read(ideasProvider);
+      final ideaList = ideasAsync.whenOrNull<List<Idea>>(
             data: (data) => data,
           ) ??
           [];
@@ -133,6 +149,7 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
       // --- RAG pipeline: embed query and find top-K relevant items ---
       List<VaultEntry>? ragEntries;
       List<Note>? ragNotes;
+      List<Idea>? ragIdeas;
       List<db.DocumentChunk>? ragChunks;
       List<String> ragDocumentTitles = [];
       List<ChatSession>? ragChatSessions;
@@ -174,12 +191,18 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
             if (topK.isNotEmpty) {
               ragUsed = true;
 
-              final entryIds = topK
-                  .where((s) => s.sourceType == 'vault_entry')
-                  .map((s) => s.sourceId)
-                  .toSet();
+              final entryIds = secretsLocked
+                  ? <String>{}
+                  : topK
+                      .where((s) => s.sourceType == 'vault_entry')
+                      .map((s) => s.sourceId)
+                      .toSet();
               final noteIds = topK
                   .where((s) => s.sourceType == 'note')
+                  .map((s) => s.sourceId)
+                  .toSet();
+              final ideaIds = topK
+                  .where((s) => s.sourceType == 'idea')
                   .map((s) => s.sourceId)
                   .toSet();
               final chunkIds = topK
@@ -197,6 +220,8 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
                   entries.where((e) => entryIds.contains(e.id)).toList();
               ragNotes =
                   notesList.where((n) => noteIds.contains(n.id)).toList();
+              ragIdeas =
+                  ideaList.where((i) => ideaIds.contains(i.id)).toList();
 
               if (chunkIds.isNotEmpty) {
                 ragChunks =
@@ -242,8 +267,10 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
         history,
         entries,
         notesList,
+        ideaList,
         ragEntries: ragEntries,
         ragNotes: ragNotes,
+        ragIdeas: ragIdeas,
         ragChunks: ragChunks,
         ragDocumentTitles: ragDocumentTitles,
         ragChatSessions: ragChatSessions,
@@ -257,6 +284,7 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
         isUser: false,
         matchedEntries: response.matchedEntries,
         matchedNotes: response.matchedNotes,
+        matchedIdeas: response.matchedIdeas,
         aiOnline: response.aiOnline,
         isVaultResult: response.isVaultResult,
         ragUsed: response.ragUsed,

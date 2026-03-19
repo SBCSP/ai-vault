@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../providers/audit_provider.dart';
 import '../providers/auth_provider.dart';
 
 
@@ -149,10 +150,17 @@ class _LockScreenState extends ConsumerState<LockScreen> {
     setState(() => _isLoading = true);
 
     final auth = ref.read(authStateProvider.notifier);
+    final audit = ref.read(auditLoggerProvider);
     if (isNewSetup) {
-      await auth.createPassword(password);
+      final ok = await auth.createPassword(password);
+      if (ok) {
+        await audit.log(action: AuditAction.vaultCreated);
+      }
     } else {
-      await auth.unlock(password);
+      final ok = await auth.unlock(password);
+      await audit.log(
+        action: ok ? AuditAction.vaultUnlocked : AuditAction.vaultUnlockFailed,
+      );
     }
 
     if (mounted) setState(() => _isLoading = false);

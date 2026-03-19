@@ -78,6 +78,18 @@ class DocumentChunks extends Table {
   Set<Column> get primaryKey => {id};
 }
 
+class Ideas extends Table {
+  TextColumn get id => text()();
+  TextColumn get title => text()();
+  TextColumn get body => text().withDefault(const Constant(''))();
+  TextColumn get tags => text().withDefault(const Constant(''))();
+  DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get updatedAt => dateTime()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
 class ChatSessions extends Table {
   TextColumn get id => text()();
   TextColumn get title => text()();
@@ -91,6 +103,17 @@ class ChatSessions extends Table {
   Set<Column> get primaryKey => {id};
 }
 
+class AuditLogs extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get action => text()(); // e.g. 'secret.created', 'note.deleted'
+  TextColumn get targetType =>
+      text().withDefault(const Constant(''))(); // 'secret', 'note', etc.
+  TextColumn get targetId => text().withDefault(const Constant(''))();
+  TextColumn get targetName => text().withDefault(const Constant(''))();
+  TextColumn get details => text().withDefault(const Constant(''))();
+  DateTimeColumn get createdAt => dateTime()();
+}
+
 @DriftDatabase(tables: [
   VaultEntries,
   Notes,
@@ -98,6 +121,8 @@ class ChatSessions extends Table {
   Documents,
   DocumentChunks,
   ChatSessions,
+  Ideas,
+  AuditLogs,
 ])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(openConnection());
@@ -105,7 +130,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 8;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -126,6 +151,12 @@ class AppDatabase extends _$AppDatabase {
           }
           if (from < 6) {
             await migrator.createTable(chatSessions);
+          }
+          if (from < 7) {
+            await migrator.createTable(ideas);
+          }
+          if (from < 8) {
+            await migrator.createTable(auditLogs);
           }
         },
       );
@@ -271,4 +302,35 @@ class AppDatabase extends _$AppDatabase {
 
   Future<List<ChatSession>> getIndexedChatSessions() =>
       (select(chatSessions)..where((t) => t.isIndexed.equals(true))).get();
+
+  // --- Ideas ---
+  Future<List<Idea>> getAllIdeas() => select(ideas).get();
+
+  Stream<List<Idea>> watchAllIdeas() => select(ideas).watch();
+
+  Future<void> insertIdea(IdeasCompanion idea) => into(ideas).insert(idea);
+
+  Future<void> updateIdea(IdeasCompanion idea) =>
+      (update(ideas)..where((t) => t.id.equals(idea.id.value))).write(idea);
+
+  Future<void> deleteIdea(String id) =>
+      (delete(ideas)..where((t) => t.id.equals(id))).go();
+
+  // --- Audit Logs ---
+  Future<void> insertAuditLog(AuditLogsCompanion log) =>
+      into(auditLogs).insert(log);
+
+  Future<List<AuditLog>> getAuditLogs({int limit = 200, int offset = 0}) =>
+      (select(auditLogs)
+            ..orderBy([(t) => OrderingTerm.desc(t.createdAt)])
+            ..limit(limit, offset: offset))
+          .get();
+
+  Stream<List<AuditLog>> watchAuditLogs({int limit = 200}) =>
+      (select(auditLogs)
+            ..orderBy([(t) => OrderingTerm.desc(t.createdAt)])
+            ..limit(limit))
+          .watch();
+
+  Future<void> clearAuditLogs() => delete(auditLogs).go();
 }

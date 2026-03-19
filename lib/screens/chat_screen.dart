@@ -7,6 +7,7 @@ import '../models/note.dart';
 import '../providers/ai_provider.dart';
 import '../providers/chat_history_provider.dart';
 import '../providers/embedding_provider.dart';
+import '../providers/secrets_lock_provider.dart';
 import '../services/ai_service.dart';
 import '../widgets/markdown_response.dart';
 import 'chat_history_screen.dart';
@@ -278,6 +279,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 ),
               ),
             ),
+            const SizedBox(width: 6),
+            _SecretsLockBadge(),
           ],
         ),
         actions: [
@@ -940,5 +943,47 @@ class _SecretEntryCardState extends State<_SecretEntryCard> {
       default:
         return Icons.lock;
     }
+  }
+}
+
+class _SecretsLockBadge extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final locked = ref.watch(secretsLockProvider);
+    final theme = Theme.of(context);
+
+    return Tooltip(
+      message: locked
+          ? 'Secrets locked — AI cannot access secrets'
+          : 'Secrets unlocked — AI has access to secrets',
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color: locked
+              ? Colors.red.withValues(alpha: 0.12)
+              : Colors.green.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              locked ? Icons.lock : Icons.lock_open,
+              size: 12,
+              color: locked ? Colors.red : Colors.green.shade700,
+            ),
+            const SizedBox(width: 3),
+            Text(
+              locked ? 'Secrets Locked' : 'Secrets Open',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: locked ? Colors.red : Colors.green.shade700,
+                fontWeight: FontWeight.w600,
+                fontSize: 10,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

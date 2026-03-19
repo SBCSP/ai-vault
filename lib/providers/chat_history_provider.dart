@@ -5,6 +5,7 @@ import 'package:uuid/uuid.dart';
 import '../database/database.dart' as db;
 import '../models/chat_session.dart';
 import '../services/ai_service.dart';
+import 'audit_provider.dart';
 import 'vault_provider.dart';
 
 /// Watches all chat sessions from the database, sorted by updatedAt desc.
@@ -18,7 +19,10 @@ final chatSessionsProvider = StreamProvider<List<ChatSession>>((ref) {
 
 /// Actions for saving, updating, and deleting chat sessions.
 final chatSessionActionsProvider = Provider<ChatSessionActions>((ref) {
-  return ChatSessionActions(db: ref.read(databaseProvider));
+  return ChatSessionActions(
+    db: ref.read(databaseProvider),
+    audit: ref.read(auditLoggerProvider),
+  );
 });
 
 ChatSession _mapSession(db.ChatSession s) {
@@ -34,9 +38,12 @@ ChatSession _mapSession(db.ChatSession s) {
 
 class ChatSessionActions {
   final db.AppDatabase _db;
+  final AuditLogger _audit;
   static const _uuid = Uuid();
 
-  ChatSessionActions({required db.AppDatabase db}) : _db = db;
+  ChatSessionActions({required db.AppDatabase db, required AuditLogger audit})
+      : _db = db,
+        _audit = audit;
 
   /// Save a new chat session from in-memory ChatMessages.
   /// Returns the new session ID.
@@ -71,6 +78,13 @@ class ChatSessionActions {
       updatedAt: now,
     ));
 
+    await _audit.log(
+      action: AuditAction.chatSaved,
+      targetType: 'chat',
+      targetId: id,
+      targetName: title,
+    );
+
     return id;
   }
 
@@ -85,6 +99,11 @@ class ChatSessionActions {
 
   /// Delete a session.
   Future<void> deleteSession(String id) async {
+    await _audit.log(
+      action: AuditAction.chatDeleted,
+      targetType: 'chat',
+      targetId: id,
+    );
     await _db.deleteChatSession(id);
   }
 }
