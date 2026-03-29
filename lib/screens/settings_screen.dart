@@ -8,9 +8,12 @@ import '../providers/auth_provider.dart';
 import '../providers/aws_provider.dart';
 import '../providers/category_provider.dart';
 import '../providers/lock_timeout_provider.dart';
+import '../providers/mcp_provider.dart';
 import 'audit_log_screen.dart';
 import 'aws_settings_screen.dart';
+import 'mcp_servers_screen.dart';
 import 'ollama_screen.dart';
+import 'server_management_screen.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -94,7 +97,59 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
+                _buildMcpCard(theme, ref),
+                const SizedBox(height: 16),
                 _buildAwsCard(theme, ref),
+                const SizedBox(height: 16),
+                // Server Management card
+                Card(
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const ServerManagementScreen()),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
+                        children: [
+                          Icon(Icons.dns,
+                              color: theme.colorScheme.primary),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment:
+                                  CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Server Management',
+                                  style: theme.textTheme.titleMedium
+                                      ?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                Text(
+                                  'Manage remote servers with aiv_agent',
+                                  style:
+                                      theme.textTheme.bodySmall?.copyWith(
+                                    color: theme
+                                        .colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Icon(
+                            Icons.arrow_forward_ios,
+                            size: 16,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
                 const SizedBox(height: 16),
                 // Audit Log link card
                 Card(
@@ -202,6 +257,80 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMcpCard(ThemeData theme, WidgetRef ref) {
+    final mcpState = ref.watch(mcpProvider);
+    final connectedCount = mcpState.connectedCount;
+    final toolCount = mcpState.toolCount;
+
+    String subtitle;
+    if (mcpState.servers.isEmpty) {
+      subtitle = 'Connect to external tools';
+    } else {
+      subtitle = '$connectedCount server${connectedCount == 1 ? '' : 's'} connected, '
+          '$toolCount tool${toolCount == 1 ? '' : 's'} available';
+    }
+
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const McpServersScreen()),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Icon(Icons.extension, color: theme.colorScheme.primary),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'MCP Servers',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      subtitle,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (connectedCount > 0)
+                Container(
+                  margin: const EdgeInsets.only(right: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    '$toolCount tools',
+                    style: const TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.green,
+                    ),
+                  ),
+                ),
+              Icon(
+                Icons.arrow_forward_ios,
+                size: 16,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ],
           ),
         ),
       ),

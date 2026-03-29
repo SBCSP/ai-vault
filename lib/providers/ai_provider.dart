@@ -11,8 +11,11 @@ import '../models/note.dart';
 import '../models/vault_entry.dart';
 import '../services/ai_service.dart';
 import '../services/embedding_service.dart';
+import '../services/mcp_service.dart';
+import 'audit_provider.dart';
 import 'embedding_provider.dart';
 import 'ideas_provider.dart';
+import 'mcp_provider.dart';
 import 'notes_provider.dart';
 import 'secrets_lock_provider.dart';
 import 'vault_provider.dart';
@@ -62,6 +65,7 @@ class AiChatState {
   final String? error;
   final String? loadedSessionId;
   final String? loadedSessionTitle;
+  final String? processingStatus;
 
   const AiChatState({
     this.messages = const [],
@@ -69,6 +73,7 @@ class AiChatState {
     this.error,
     this.loadedSessionId,
     this.loadedSessionTitle,
+    this.processingStatus,
   });
 
   AiChatState copyWith({
@@ -77,6 +82,7 @@ class AiChatState {
     String? Function()? error,
     String? Function()? loadedSessionId,
     String? Function()? loadedSessionTitle,
+    String? Function()? processingStatus,
   }) {
     return AiChatState(
       messages: messages ?? this.messages,
@@ -88,9 +94,18 @@ class AiChatState {
       loadedSessionTitle: loadedSessionTitle != null
           ? loadedSessionTitle()
           : this.loadedSessionTitle,
+      processingStatus: processingStatus != null
+          ? processingStatus()
+          : this.processingStatus,
     );
   }
 }
+
+/// Provider to check if the current Ollama model supports tool calling.
+final modelSupportsToolsProvider = FutureProvider<bool>((ref) async {
+  final aiService = ref.watch(aiServiceProvider);
+  return aiService.supportsTools();
+});
 
 class AiChatNotifier extends StateNotifier<AiChatState> {
   final Ref _ref;
@@ -262,39 +277,253 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
         // RAG failed — fall back to full context silently
       }
 
-      final response = await aiService.chat(
-        query,
-        history,
-        entries,
-        notesList,
-        ideaList,
-        ragEntries: ragEntries,
-        ragNotes: ragNotes,
-        ragIdeas: ragIdeas,
-        ragChunks: ragChunks,
-        ragDocumentTitles: ragDocumentTitles,
-        ragChatSessions: ragChatSessions,
-        ragUsed: ragUsed,
-      );
+      // --- MCP tool-calling path ---
+      final mcpState = _ref.read(mcpProvider);
+      final mcpTools = mcpState.availableTools;
 
-      if (!mounted) return;
+      // If MCP servers are connected with tools, always try the tool-calling path.
+      // The model will simply not emit tool_calls if it doesn't support them,
+      // and we'll fall through to treating the response as plain text.
+      final bool useMcpTools = mcpTools.isNotEmpty;
 
-      final assistantMessage = ChatMessage(
-        text: response.text,
-        isUser: false,
-        matchedEntries: response.matchedEntries,
-        matchedNotes: response.matchedNotes,
-        matchedIdeas: response.matchedIdeas,
-        aiOnline: response.aiOnline,
-        isVaultResult: response.isVaultResult,
-        ragUsed: response.ragUsed,
-        ragSources: response.ragSources,
-      );
+      if (useMcpTools) {
+        // Tool-calling path: build messages, send with tools, loop
+        final mcpNotifier = _ref.read(mcpProvider.notifier);
+        final mcpService = mcpNotifier.mcpService;
+        final auditLogger = _ref.read(auditLoggerProvider);
 
-      state = state.copyWith(
-        messages: [...state.messages, assistantMessage],
-        isProcessing: false,
-      );
+        // Build vault context
+        final contextEntries = (ragEntries != null && ragEntries.isNotEmpty)
+            ? ragEntries
+            : entries;
+        final contextNotes = (ragNotes != null && ragNotes.isNotEmpty)
+            ? ragNotes
+            : notesList;
+        final contextIdeas = (ragIdeas != null && ragIdeas.isNotEmpty)
+            ? ragIdeas
+            : ideaList;
+        final vaultContext = aiService.buildVaultContext(
+          contextEntries,
+          contextNotes,
+          ideas: contextIdeas,
+          documentChunks: ragChunks,
+          documentTitles: ragDocumentTitles,
+          chatSessions: ragChatSessions,
+        );
+
+        final ollamaTools = mcpService.getOllamaToolsJson();
+
+        // Build a human-readable tool summary for the system prompt
+        final toolSummaryBuf = StringBuffer();
+        toolSummaryBuf.writeln('\n\nAVAILABLE TOOLS:');
+        for (final tool in mcpTools) {
+          toolSummaryBuf.writeln('- ${tool.name}: ${tool.description}');
+        }
+
+        final messages = <Map<String, dynamic>>[
+          {
+            'role': 'system',
+            'content': '${AiService.systemPrompt}${AiService.mcpToolsPromptSuffix}$toolSummaryBuf\n\n$vaultContext',
+          },
+          ...history.map((m) => <String, dynamic>{
+                'role': m.isUser ? 'user' : 'assistant',
+                'content': m.text,
+              }),
+          {'role': 'user', 'content': query},
+        ];
+
+        const maxRounds = 10;
+        var round = 0;
+        String finalText = '';
+        final allToolCalls = <ToolCallInfo>[];
+
+        while (round < maxRounds) {
+          round++;
+
+          if (!mounted) return;
+          state = state.copyWith(
+            processingStatus: () => round == 1
+                ? 'Thinking with tools...'
+                : 'Processing tool results (round $round)...',
+          );
+
+          final toolResponse = await aiService.chatWithTools(
+            messages,
+            tools: ollamaTools,
+          );
+
+          if (toolResponse.isError) {
+            finalText = toolResponse.error ?? 'Unknown error';
+            break;
+          }
+
+          if (toolResponse.isToolCall && toolResponse.toolCalls != null) {
+            // Add assistant message with tool_calls to conversation
+            messages.add({
+              'role': 'assistant',
+              'content': '',
+              'tool_calls': toolResponse.toolCalls!
+                  .map((tc) => {
+                        'function': {
+                          'name': tc.name,
+                          'arguments': tc.arguments,
+                        },
+                      })
+                  .toList(),
+            });
+
+            // Execute each tool call via MCP
+            for (final tc in toolResponse.toolCalls!) {
+              if (!mounted) return;
+              state = state.copyWith(
+                processingStatus: () => 'Calling ${tc.name}...',
+              );
+
+              final serverId = mcpService.toolToServerMap[tc.name];
+              if (serverId == null) {
+                messages.add({
+                  'role': 'tool',
+                  'content': 'Error: tool "${tc.name}" not found on any connected MCP server',
+                });
+                allToolCalls.add(ToolCallInfo(
+                  toolName: tc.name,
+                  serverName: 'unknown',
+                  arguments: tc.arguments,
+                  error: 'Tool not found',
+                ));
+                continue;
+              }
+
+              final serverName = mcpTools
+                  .where((t) => t.name == tc.name)
+                  .map((t) => t.serverName)
+                  .firstOrNull ?? serverId;
+
+              final stopwatch = Stopwatch()..start();
+              try {
+                final result = await mcpService.callTool(
+                  serverId,
+                  tc.name,
+                  tc.arguments,
+                );
+                stopwatch.stop();
+
+                messages.add({
+                  'role': 'tool',
+                  'content': result,
+                });
+                allToolCalls.add(ToolCallInfo(
+                  toolName: tc.name,
+                  serverName: serverName,
+                  arguments: tc.arguments,
+                  result: result,
+                  duration: stopwatch.elapsed,
+                ));
+
+                auditLogger.log(
+                  action: AuditAction.mcpToolCalled,
+                  targetType: 'mcp_tool',
+                  targetName: tc.name,
+                  details: 'Server: $serverName, Duration: ${stopwatch.elapsedMilliseconds}ms',
+                );
+              } catch (e) {
+                stopwatch.stop();
+                messages.add({
+                  'role': 'tool',
+                  'content': 'Error: ${e.toString()}',
+                });
+                allToolCalls.add(ToolCallInfo(
+                  toolName: tc.name,
+                  serverName: serverName,
+                  arguments: tc.arguments,
+                  error: e.toString(),
+                  duration: stopwatch.elapsed,
+                ));
+
+                auditLogger.log(
+                  action: AuditAction.mcpToolFailed,
+                  targetType: 'mcp_tool',
+                  targetName: tc.name,
+                  details: 'Server: $serverName, Error: ${e.toString()}',
+                );
+              }
+            }
+          } else {
+            // Final text response
+            finalText = toolResponse.text ?? '';
+            break;
+          }
+        }
+
+        if (!mounted) return;
+
+        // Extract referenced items from final text
+        final referenced = aiService.extractReferencedItems(
+          finalText, entries, notesList, ideaList,
+        );
+        final cleanText = aiService.cleanResponse(finalText);
+
+        final assistantMessage = ChatMessage(
+          text: cleanText,
+          isUser: false,
+          matchedEntries: referenced.entries,
+          matchedNotes: referenced.notes,
+          matchedIdeas: referenced.ideas,
+          aiOnline: true,
+          isVaultResult: referenced.entries.isNotEmpty ||
+              referenced.notes.isNotEmpty ||
+              referenced.ideas.isNotEmpty,
+          ragUsed: ragUsed,
+          ragSources: aiService.buildRagSourceSummary(
+            ragEntries, ragNotes, ragIdeas, ragChunks,
+            ragDocumentTitles, ragChatSessions,
+          ),
+          toolCalls: allToolCalls,
+          mcpUsed: true,
+        );
+
+        state = state.copyWith(
+          messages: [...state.messages, assistantMessage],
+          isProcessing: false,
+          processingStatus: () => null,
+        );
+      } else {
+        // Standard path — no MCP tools or model doesn't support them
+        final response = await aiService.chat(
+          query,
+          history,
+          entries,
+          notesList,
+          ideaList,
+          ragEntries: ragEntries,
+          ragNotes: ragNotes,
+          ragIdeas: ragIdeas,
+          ragChunks: ragChunks,
+          ragDocumentTitles: ragDocumentTitles,
+          ragChatSessions: ragChatSessions,
+          ragUsed: ragUsed,
+        );
+
+        if (!mounted) return;
+
+        final assistantMessage = ChatMessage(
+          text: response.text,
+          isUser: false,
+          matchedEntries: response.matchedEntries,
+          matchedNotes: response.matchedNotes,
+          matchedIdeas: response.matchedIdeas,
+          aiOnline: response.aiOnline,
+          isVaultResult: response.isVaultResult,
+          ragUsed: response.ragUsed,
+          ragSources: response.ragSources,
+        );
+
+        state = state.copyWith(
+          messages: [...state.messages, assistantMessage],
+          isProcessing: false,
+          processingStatus: () => null,
+        );
+      }
     } catch (e) {
       if (!mounted) return;
       state = state.copyWith(

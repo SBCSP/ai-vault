@@ -7,6 +7,32 @@ import '../models/chat_session.dart';
 import '../models/idea.dart';
 import '../models/note.dart';
 import '../models/vault_entry.dart';
+import 'mcp_service.dart';
+
+/// A request from the LLM to call a tool.
+class ToolCallRequest {
+  final String name;
+  final Map<String, dynamic> arguments;
+
+  const ToolCallRequest({required this.name, required this.arguments});
+}
+
+/// Response from chatWithTools — either final text or tool call requests.
+class AiToolResponse {
+  final String? text;
+  final List<ToolCallRequest>? toolCalls;
+  final String? error;
+
+  bool get isToolCall => toolCalls != null && toolCalls!.isNotEmpty;
+  bool get isError => error != null;
+
+  const AiToolResponse._({this.text, this.toolCalls, this.error});
+
+  factory AiToolResponse.text(String text) => AiToolResponse._(text: text);
+  factory AiToolResponse.toolCalls(List<ToolCallRequest> calls) =>
+      AiToolResponse._(toolCalls: calls);
+  factory AiToolResponse.withError(String error) => AiToolResponse._(error: error);
+}
 
 class AiService {
   String _serverUrl;
@@ -109,7 +135,7 @@ class AiService {
     }
   }
 
-  static const _systemPrompt = 'You are a personal vault assistant. '
+  static const systemPrompt = 'You are a personal vault assistant. '
       'The user has a collection of saved records, notes, and documents shown below under "USER RECORDS". '
       'Your ONLY source of truth is the data provided in that section.\n\n'
       'CRITICAL RULES:\n'
@@ -129,9 +155,22 @@ class AiService {
       '- Link: github.com"\n\n'
       'Use markdown formatting for code blocks, lists, and emphasis.';
 
+  static const mcpToolsPromptSuffix = '\n\n'
+      'IMPORTANT — EXTERNAL TOOLS:\n'
+      'You have access to external tools provided via MCP (Model Context Protocol) servers. '
+      'When the user asks a question that is NOT about their vault records but could be answered by one of the available tools, '
+      'you MUST use the appropriate tool to fetch the information. Do NOT say "I don\'t see that in your vault" '
+      'if a tool can answer the question.\n\n'
+      'Guidelines for tool use:\n'
+      '1. For questions about vault records (secrets, notes, ideas, documents) — answer from the USER RECORDS section.\n'
+      '2. For questions about external topics where a tool can help — USE THE TOOL. Call it and present the results to the user.\n'
+      '3. You may call multiple tools or call a tool multiple times if needed to fully answer the question.\n'
+      '4. Present tool results clearly with markdown formatting.\n'
+      '5. If a tool call fails, let the user know and suggest alternatives.\n';
+
   /// Build a text summary of all vault contents for the LLM context.
   /// Uses neutral terminology to avoid triggering safety filters in small models.
-  String _buildVaultContext(
+  String buildVaultContext(
     List<VaultEntry> entries,
     List<Note> notes, {
     List<Idea>? ideas,
@@ -264,7 +303,7 @@ class AiService {
 
   /// Parse the LLM response for [[Item Name]] references and match them
   /// against entries and notes to determine which cards to show.
-  ({List<VaultEntry> entries, List<Note> notes, List<Idea> ideas}) _extractReferencedItems(
+  ({List<VaultEntry> entries, List<Note> notes, List<Idea> ideas}) extractReferencedItems(
     String response,
     List<VaultEntry> allEntries,
     List<Note> allNotes,
@@ -308,7 +347,7 @@ class AiService {
   }
 
   /// Build a human-readable summary of RAG sources used.
-  List<String> _buildRagSourceSummary(
+  List<String> buildRagSourceSummary(
     List<VaultEntry>? ragEntries,
     List<Note>? ragNotes,
     List<Idea>? ragIdeas,
@@ -342,7 +381,7 @@ class AiService {
   }
 
   /// Strip [[brackets]] from the response text for display.
-  String _cleanResponse(String response) {
+  String cleanResponse(String response) {
     return response.replaceAllMapped(
       RegExp(r'\[\[(.+?)\]\]'),
       (m) => m.group(1)!,
@@ -388,7 +427,7 @@ class AiService {
     final contextIdeas = (ragIdeas != null && ragIdeas.isNotEmpty)
         ? ragIdeas
         : ideas;
-    final vaultContext = _buildVaultContext(
+    final vaultContext = buildVaultContext(
       contextEntries,
       contextNotes,
       ideas: contextIdeas,
@@ -401,7 +440,7 @@ class AiService {
     final messages = <Map<String, String>>[
       {
         'role': 'system',
-        'content': '$_systemPrompt\n\n$vaultContext',
+        'content': '$systemPrompt\n\n$vaultContext',
       },
       ...history.map((m) => {
             'role': m.isUser ? 'user' : 'assistant',
@@ -419,8 +458,8 @@ class AiService {
     }
 
     // Extract [[referenced items]] from the response
-    final referenced = _extractReferencedItems(response, entries, notes, ideas);
-    final cleanText = _cleanResponse(response);
+    final referenced = extractReferencedItems(response, entries, notes, ideas);
+    final cleanText = cleanResponse(response);
 
     return ChatResponse(
       text: cleanText,
@@ -430,10 +469,107 @@ class AiService {
       aiOnline: true,
       isVaultResult: referenced.entries.isNotEmpty || referenced.notes.isNotEmpty || referenced.ideas.isNotEmpty,
       ragUsed: ragUsed,
-      ragSources: _buildRagSourceSummary(
+      ragSources: buildRagSourceSummary(
         ragEntries, ragNotes, ragIdeas, ragChunks, ragDocumentTitles, ragChatSessions,
       ),
     );
+  }
+
+  /// Check if the current model supports tool/function calling.
+  Future<bool> supportsTools() async {
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$_serverUrl/api/show'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'name': _model}),
+          )
+          .timeout(const Duration(seconds: 10));
+
+      if (response.statusCode != 200) return false;
+
+      final json = jsonDecode(response.body) as Map<String, dynamic>;
+      final template = json['template'] as String? ?? '';
+
+      // Check if model template includes tool handling
+      if (template.contains('.Tools') || template.contains('tool_call')) {
+        return true;
+      }
+
+      // Heuristic fallback based on known model families
+      final modelLower = _model.toLowerCase();
+      return _toolCapableFamilies.any((f) => modelLower.contains(f));
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static const _toolCapableFamilies = [
+    'llama3.1', 'llama3.2', 'llama3.3', 'llama4',
+    'qwen2.5', 'qwen3',
+    'mistral', 'command-r',
+    'firefunction', 'hermes',
+    'granite',
+  ];
+
+  /// Send a chat request with tools. Returns either a text response or tool call requests.
+  Future<AiToolResponse> chatWithTools(
+    List<Map<String, dynamic>> messages, {
+    List<Map<String, dynamic>>? tools,
+  }) async {
+    try {
+      final body = <String, dynamic>{
+        'model': _model,
+        'messages': messages,
+        'stream': false,
+        'options': {'temperature': 0.2},
+      };
+
+      if (tools != null && tools.isNotEmpty) {
+        body['tools'] = tools;
+      }
+
+      final response = await http
+          .post(
+            Uri.parse('$_serverUrl/api/chat'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode(body),
+          )
+          .timeout(const Duration(seconds: 120));
+
+      if (response.statusCode != 200) {
+        return AiToolResponse.withError(
+          'Ollama returned status ${response.statusCode}',
+        );
+      }
+
+      final json = jsonDecode(response.body) as Map<String, dynamic>;
+      final message = json['message'] as Map<String, dynamic>?;
+      if (message == null) {
+        return AiToolResponse.withError('No message in response');
+      }
+
+      final toolCalls = message['tool_calls'] as List<dynamic>?;
+      final content = message['content'] as String? ?? '';
+
+      if (toolCalls != null && toolCalls.isNotEmpty) {
+        final calls = toolCalls.map((tc) {
+          final fn = tc['function'] as Map<String, dynamic>;
+          final args = fn['arguments'];
+          return ToolCallRequest(
+            name: fn['name'] as String,
+            arguments: args is Map<String, dynamic>
+                ? args
+                : <String, dynamic>{},
+          );
+        }).toList();
+        return AiToolResponse.toolCalls(calls);
+      }
+
+      return AiToolResponse.text(content);
+    } catch (e) {
+      return AiToolResponse.withError(e.toString());
+    }
   }
 
   /// Send a multi-turn conversation to the LLM
@@ -492,6 +628,8 @@ class ChatMessage {
   final bool isVaultResult;
   final bool ragUsed;
   final List<String> ragSources;
+  final List<ToolCallInfo> toolCalls;
+  final bool mcpUsed;
 
   const ChatMessage({
     required this.text,
@@ -503,6 +641,8 @@ class ChatMessage {
     this.isVaultResult = false,
     this.ragUsed = false,
     this.ragSources = const [],
+    this.toolCalls = const [],
+    this.mcpUsed = false,
   });
 }
 
@@ -516,6 +656,8 @@ class ChatResponse {
   final bool isVaultResult;
   final bool ragUsed;
   final List<String> ragSources;
+  final List<ToolCallInfo> toolCalls;
+  final bool mcpUsed;
 
   const ChatResponse({
     required this.text,
@@ -526,5 +668,7 @@ class ChatResponse {
     this.isVaultResult = false,
     this.ragUsed = false,
     this.ragSources = const [],
+    this.toolCalls = const [],
+    this.mcpUsed = false,
   });
 }

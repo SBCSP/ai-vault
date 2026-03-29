@@ -302,6 +302,22 @@ class _AuditLogTile extends StatelessWidget {
       case AuditAction.secretsUnlocked:
         return (icon: Icons.lock_open, color: Colors.green, label: 'SECRETS UNLOCKED');
 
+      // MCP
+      case AuditAction.mcpServerAdded:
+        return (icon: Icons.extension, color: Colors.blue, label: 'MCP ADDED');
+      case AuditAction.mcpServerRemoved:
+        return (icon: Icons.extension_off, color: Colors.red, label: 'MCP REMOVED');
+      case AuditAction.mcpConnected:
+        return (icon: Icons.power, color: Colors.green, label: 'MCP CONNECTED');
+      case AuditAction.mcpDisconnected:
+        return (icon: Icons.power_off, color: Colors.grey, label: 'MCP DISCONNECTED');
+      case AuditAction.mcpConnectionFailed:
+        return (icon: Icons.error, color: Colors.red, label: 'MCP FAILED');
+      case AuditAction.mcpToolCalled:
+        return (icon: Icons.build, color: Colors.deepPurple, label: 'MCP TOOL CALL');
+      case AuditAction.mcpToolFailed:
+        return (icon: Icons.build_circle, color: Colors.red, label: 'MCP TOOL FAIL');
+
       default:
         return (icon: Icons.info, color: Colors.grey, label: action.toUpperCase());
     }

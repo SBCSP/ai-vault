@@ -10,7 +10,9 @@ import '../providers/documents_provider.dart';
 import '../providers/ideas_provider.dart';
 import '../providers/notes_provider.dart';
 import '../providers/secrets_lock_provider.dart';
+import '../providers/server_provider.dart';
 import '../providers/vault_provider.dart';
+import '../providers/version_provider.dart';
 import '../services/ai_service.dart';
 import '../widgets/ai_search_bar.dart';
 import 'document_form_screen.dart';
@@ -25,6 +27,7 @@ import 'settings_screen.dart';
 import 'categories_screen.dart';
 import 'chat_history_screen.dart';
 import 'expired_secrets_screen.dart';
+import 'server_management_screen.dart';
 import 'vault_list_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -45,11 +48,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     final ideasAsync = ref.watch(ideasProvider);
     final docsAsync = ref.watch(documentsProvider);
     final chatsAsync = ref.watch(chatSessionsProvider);
+    final serversAsync = ref.watch(serversProvider);
     final aiService = ref.watch(aiServiceProvider);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('AI VaultIO'),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('AI VaultIO'),
+            const SizedBox(width: 8),
+            Text(
+              'v${ref.watch(appVersionProvider)}',
+              style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(context)
+                    .colorScheme
+                    .onSurface
+                    .withValues(alpha: 0.5),
+              ),
+            ),
+          ],
+        ),
         actions: [
           IconButton(
             icon: Icon(
@@ -87,6 +107,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               final ideaCount = ideasAsync.valueOrNull?.length ?? 0;
               final docCount = docsAsync.valueOrNull?.length ?? 0;
               final chatCount = chatsAsync.valueOrNull?.length ?? 0;
+              final serverCount = serversAsync.valueOrNull?.length ?? 0;
               return SingleChildScrollView(
                 padding: const EdgeInsets.all(16),
                 child: Center(
@@ -106,6 +127,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                           ideaCount: ideaCount,
                           documentCount: docCount,
                           chatCount: chatCount,
+                          serverCount: serverCount,
                           aiService: aiService,
                         ),
                         const SizedBox(height: 24),
@@ -281,6 +303,7 @@ class _StatsRow extends StatefulWidget {
   final int ideaCount;
   final int documentCount;
   final int chatCount;
+  final int serverCount;
   final dynamic aiService;
 
   const _StatsRow({
@@ -289,6 +312,7 @@ class _StatsRow extends StatefulWidget {
     required this.ideaCount,
     required this.documentCount,
     required this.chatCount,
+    required this.serverCount,
     required this.aiService,
   });
 
@@ -411,6 +435,17 @@ class _StatsRowState extends State<_StatsRow> {
                 context,
                 MaterialPageRoute(
                     builder: (_) => const ExpiredSecretsScreen()),
+              ),
+            ),
+            _DashboardCard(
+              icon: Icons.dns,
+              iconColor: Colors.blueGrey,
+              label: 'Servers',
+              value: '${widget.serverCount}',
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => const ServerManagementScreen()),
               ),
             ),
             _DashboardCard(

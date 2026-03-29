@@ -103,6 +103,34 @@ class ChatSessions extends Table {
   Set<Column> get primaryKey => {id};
 }
 
+class McpServers extends Table {
+  TextColumn get id => text()();
+  TextColumn get name => text()();
+  TextColumn get url => text()();
+  TextColumn get authToken => text().withDefault(const Constant(''))();
+  BoolColumn get enabled => boolean().withDefault(const Constant(true))();
+  DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get updatedAt => dateTime()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+class Servers extends Table {
+  TextColumn get id => text()();
+  TextColumn get name => text()();
+  TextColumn get host => text()();
+  IntColumn get port => integer().withDefault(const Constant(9090))();
+  BoolColumn get enabled => boolean().withDefault(const Constant(true))();
+  TextColumn get status => text().withDefault(const Constant('unknown'))(); // unknown, online, offline
+  DateTimeColumn get lastSeenAt => dateTime().nullable()();
+  DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get updatedAt => dateTime()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
 class AuditLogs extends Table {
   IntColumn get id => integer().autoIncrement()();
   TextColumn get action => text()(); // e.g. 'secret.created', 'note.deleted'
@@ -123,6 +151,8 @@ class AuditLogs extends Table {
   ChatSessions,
   Ideas,
   AuditLogs,
+  McpServers,
+  Servers,
 ])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(openConnection());
@@ -130,7 +160,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 8;
+  int get schemaVersion => 10;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -157,6 +187,12 @@ class AppDatabase extends _$AppDatabase {
           }
           if (from < 8) {
             await migrator.createTable(auditLogs);
+          }
+          if (from < 9) {
+            await migrator.createTable(mcpServers);
+          }
+          if (from < 10) {
+            await migrator.createTable(servers);
           }
         },
       );
@@ -333,4 +369,35 @@ class AppDatabase extends _$AppDatabase {
           .watch();
 
   Future<void> clearAuditLogs() => delete(auditLogs).go();
+
+  // --- MCP Servers ---
+  Future<List<McpServer>> getAllMcpServers() => select(mcpServers).get();
+
+  Stream<List<McpServer>> watchAllMcpServers() => select(mcpServers).watch();
+
+  Future<void> insertMcpServer(McpServersCompanion server) =>
+      into(mcpServers).insert(server);
+
+  Future<void> updateMcpServer(McpServersCompanion server) =>
+      (update(mcpServers)..where((t) => t.id.equals(server.id.value)))
+          .write(server);
+
+  Future<void> deleteMcpServer(String id) =>
+      (delete(mcpServers)..where((t) => t.id.equals(id))).go();
+
+  // --- Servers (aiv_agent) ---
+  Future<List<Server>> getAllServers() => select(servers).get();
+
+  Stream<List<Server>> watchAllServers() =>
+      (select(servers)..orderBy([(t) => OrderingTerm.asc(t.name)])).watch();
+
+  Future<void> insertServer(ServersCompanion server) =>
+      into(servers).insert(server);
+
+  Future<void> updateServer(ServersCompanion server) =>
+      (update(servers)..where((t) => t.id.equals(server.id.value)))
+          .write(server);
+
+  Future<void> deleteServer(String id) =>
+      (delete(servers)..where((t) => t.id.equals(id))).go();
 }
