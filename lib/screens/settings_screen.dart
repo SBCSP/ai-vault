@@ -9,11 +9,13 @@ import '../providers/aws_provider.dart';
 import '../providers/category_provider.dart';
 import '../providers/lock_timeout_provider.dart';
 import '../providers/mcp_provider.dart';
+import '../services/claude_api_service.dart';
 import 'audit_log_screen.dart';
 import 'aws_settings_screen.dart';
 import 'mcp_servers_screen.dart';
 import 'ollama_screen.dart';
 import 'server_management_screen.dart';
+import 'wiki_screen.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -27,6 +29,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final currentModel = ref.watch(aiServiceProvider).model;
+    final llmProvider = ref.watch(llmProviderTypeProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -47,6 +50,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                // LLM Provider Selector
+                _buildLlmProviderSelector(theme, ref, llmProvider),
+                const SizedBox(height: 16),
                 // Ollama / AI link card
                 Card(
                   clipBehavior: Clip.antiAlias,
@@ -61,7 +67,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       child: Row(
                         children: [
                           Icon(Icons.smart_toy,
-                              color: theme.colorScheme.primary),
+                              color: llmProvider == LlmProviderType.ollama
+                                  ? theme.colorScheme.primary
+                                  : theme.colorScheme.onSurfaceVariant),
                           const SizedBox(width: 12),
                           Expanded(
                             child: Column(
@@ -86,6 +94,23 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                               ],
                             ),
                           ),
+                          if (llmProvider == LlmProviderType.ollama)
+                            Container(
+                              margin: const EdgeInsets.only(right: 8),
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.green.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: const Text(
+                                'Active',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.green,
+                                ),
+                              ),
+                            ),
                           Icon(
                             Icons.arrow_forward_ios,
                             size: 16,
@@ -96,6 +121,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     ),
                   ),
                 ),
+                const SizedBox(height: 16),
+                // Claude API card
+                _ClaudeApiCard(),
                 const SizedBox(height: 16),
                 _buildMcpCard(theme, ref),
                 const SizedBox(height: 16),
@@ -131,6 +159,56 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                                 ),
                                 Text(
                                   'Manage remote servers with aiv_agent',
+                                  style:
+                                      theme.textTheme.bodySmall?.copyWith(
+                                    color: theme
+                                        .colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Icon(
+                            Icons.arrow_forward_ios,
+                            size: 16,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                // Wiki card
+                Card(
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const WikiScreen()),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
+                        children: [
+                          Icon(Icons.menu_book,
+                              color: theme.colorScheme.primary),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment:
+                                  CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Wiki',
+                                  style: theme.textTheme.titleMedium
+                                      ?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                Text(
+                                  'Documentation and guides',
                                   style:
                                       theme.textTheme.bodySmall?.copyWith(
                                     color: theme
@@ -337,6 +415,84 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
+  Widget _buildLlmProviderSelector(ThemeData theme, WidgetRef ref, LlmProviderType current) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.psychology, color: theme.colorScheme.primary),
+                const SizedBox(width: 8),
+                Text(
+                  'Active LLM Provider',
+                  style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: _ProviderChoice(
+                    icon: Icons.smart_toy,
+                    label: 'Ollama',
+                    subtitle: 'Local',
+                    isSelected: current == LlmProviderType.ollama,
+                    color: Colors.green,
+                    onTap: () => ref.read(llmProviderTypeProvider.notifier).setProvider(LlmProviderType.ollama),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _ProviderChoice(
+                    icon: Icons.cloud,
+                    label: 'Claude',
+                    subtitle: 'Cloud',
+                    isSelected: current == LlmProviderType.claude,
+                    color: Colors.blue,
+                    onTap: () {
+                      final claude = ref.read(claudeApiProvider);
+                      if (!claude.isConfigured) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Add your Claude API key below first'),
+                            duration: Duration(seconds: 3),
+                          ),
+                        );
+                        return;
+                      }
+                      ref.read(llmProviderTypeProvider.notifier).setProvider(LlmProviderType.claude);
+                    },
+                  ),
+                ),
+              ],
+            ),
+            if (current == LlmProviderType.claude) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Icon(Icons.lock, size: 14, color: Colors.orange.shade700),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      'Secrets auto-locked. Switch to Ollama for secrets access.',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: Colors.orange.shade700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildAwsCard(ThemeData theme, WidgetRef ref) {
     final aws = ref.watch(awsProvider);
     final isConnected =
@@ -414,6 +570,253 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ClaudeApiCard extends ConsumerStatefulWidget {
+  @override
+  ConsumerState<_ClaudeApiCard> createState() => _ClaudeApiCardState();
+}
+
+class _ClaudeApiCardState extends ConsumerState<_ClaudeApiCard> {
+  final _apiKeyController = TextEditingController();
+  bool _keyVisible = false;
+  bool _testing = false;
+  bool? _testResult;
+
+  @override
+  void dispose() {
+    _apiKeyController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _testConnection() async {
+    setState(() {
+      _testing = true;
+      _testResult = null;
+    });
+    final claude = ref.read(claudeApiProvider);
+    final result = await claude.testConnection();
+    if (mounted) {
+      setState(() {
+        _testing = false;
+        _testResult = result;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final claude = ref.watch(claudeApiProvider);
+    final llmProvider = ref.watch(llmProviderTypeProvider);
+    final isActive = llmProvider == LlmProviderType.claude;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.cloud, color: isActive ? Colors.blue : theme.colorScheme.onSurfaceVariant),
+                const SizedBox(width: 8),
+                Text(
+                  'Claude API',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade700,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.cloud, size: 10, color: Colors.white),
+                      SizedBox(width: 3),
+                      Text(
+                        'Cloud',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (isActive) ...[
+                  const SizedBox(width: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.green.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text(
+                      'Active',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.green,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Connect to Anthropic\'s Claude models for more powerful AI responses. '
+              'Secrets are automatically locked when using cloud models.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 8),
+            // Security warning
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.orange.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.shield, size: 16, color: Colors.orange.shade700),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Secrets are auto-locked when Claude is active. Switch to Ollama for secrets access.',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: Colors.orange.shade700,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            // API Key input
+            Text('API Key', style: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 6),
+            TextField(
+              controller: _apiKeyController..text = claude.apiKey,
+              obscureText: !_keyVisible,
+              decoration: InputDecoration(
+                hintText: 'sk-ant-...',
+                border: const OutlineInputBorder(),
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                suffixIcon: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: Icon(_keyVisible ? Icons.visibility_off : Icons.visibility, size: 18),
+                      onPressed: () => setState(() => _keyVisible = !_keyVisible),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.save, size: 18),
+                      tooltip: 'Save API key',
+                      onPressed: () {
+                        ref.read(claudeApiProvider.notifier).updateApiKey(_apiKeyController.text.trim());
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('API key saved'), duration: Duration(seconds: 2)),
+                        );
+                      },
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            // Model selector
+            Text('Model', style: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 6),
+            ...ClaudeApiService.availableModels.map((entry) {
+              final (modelId, name, desc) = entry;
+              final isSelected = claude.model == modelId;
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Material(
+                  color: isSelected ? theme.colorScheme.primaryContainer : Colors.transparent,
+                  borderRadius: BorderRadius.circular(8),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: () => ref.read(claudeApiProvider.notifier).updateModel(modelId),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      child: Row(
+                        children: [
+                          Icon(
+                            isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
+                            size: 18,
+                            color: isSelected ? theme.colorScheme.primary : theme.colorScheme.onSurfaceVariant,
+                          ),
+                          const SizedBox(width: 10),
+                          Text(name, style: theme.textTheme.bodyMedium?.copyWith(
+                            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                          )),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.surfaceContainerHighest,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(desc, style: theme.textTheme.labelSmall?.copyWith(fontSize: 10)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }),
+            const SizedBox(height: 8),
+            // Test connection button
+            Row(
+              children: [
+                FilledButton.tonalIcon(
+                  onPressed: claude.isConfigured && !_testing ? _testConnection : null,
+                  icon: _testing
+                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.wifi_tethering, size: 18),
+                  label: Text(_testing ? 'Testing...' : 'Test Connection'),
+                ),
+                if (_testResult != null) ...[
+                  const SizedBox(width: 8),
+                  Icon(
+                    _testResult! ? Icons.check_circle : Icons.error,
+                    size: 18,
+                    color: _testResult! ? Colors.green : Colors.red,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    _testResult! ? 'Connected' : 'Failed',
+                    style: TextStyle(
+                      color: _testResult! ? Colors.green : Colors.red,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ],
         ),
       ),
     );
@@ -1019,7 +1422,8 @@ class _VaultApiCardState extends ConsumerState<_VaultApiCard> {
     );
   }
 
-  Widget _buildCertificateSection(ThemeData theme, ApiServerState apiState) {
+  Widget _buildCertificateSection(
+      ThemeData theme, ApiServerState apiState) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(12),
@@ -1105,6 +1509,66 @@ class _VaultApiCardState extends ConsumerState<_VaultApiCard> {
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+class _ProviderChoice extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String subtitle;
+  final bool isSelected;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _ProviderChoice({
+    required this.icon,
+    required this.label,
+    required this.subtitle,
+    required this.isSelected,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Material(
+      color: isSelected ? color.withValues(alpha: 0.12) : Colors.transparent,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isSelected ? color : theme.colorScheme.outlineVariant,
+              width: isSelected ? 2 : 1,
+            ),
+          ),
+          child: Column(
+            children: [
+              Icon(icon, color: isSelected ? color : theme.colorScheme.onSurfaceVariant, size: 28),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                  color: isSelected ? color : null,
+                ),
+              ),
+              Text(
+                subtitle,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: isSelected ? color : theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

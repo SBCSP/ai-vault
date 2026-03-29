@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -10,6 +11,7 @@ import '../models/idea.dart';
 import '../models/note.dart';
 import '../models/vault_entry.dart';
 import '../services/ai_service.dart';
+import '../services/claude_api_service.dart';
 import '../services/embedding_service.dart';
 import '../services/mcp_service.dart';
 import 'audit_provider.dart';
@@ -19,6 +21,67 @@ import 'mcp_provider.dart';
 import 'notes_provider.dart';
 import 'secrets_lock_provider.dart';
 import 'vault_provider.dart';
+
+// --- LLM Provider Type ---
+
+enum LlmProviderType { ollama, claude }
+
+/// Tracks which LLM backend is active and persists the selection.
+final llmProviderTypeProvider =
+    StateNotifierProvider<LlmProviderTypeNotifier, LlmProviderType>((ref) {
+  return LlmProviderTypeNotifier();
+});
+
+class LlmProviderTypeNotifier extends StateNotifier<LlmProviderType> {
+  LlmProviderTypeNotifier() : super(LlmProviderType.ollama) {
+    _load();
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final value = prefs.getString('llm_provider_type');
+    if (value == 'claude') state = LlmProviderType.claude;
+  }
+
+  Future<void> setProvider(LlmProviderType provider) async {
+    state = provider;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('llm_provider_type', provider.name);
+  }
+}
+
+// --- Claude API Provider ---
+
+final claudeApiProvider =
+    StateNotifierProvider<ClaudeApiNotifier, ClaudeApiService>((ref) {
+  return ClaudeApiNotifier();
+});
+
+class ClaudeApiNotifier extends StateNotifier<ClaudeApiService> {
+  ClaudeApiNotifier() : super(ClaudeApiService()) {
+    _load();
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final key = prefs.getString('claude_api_key');
+    final model = prefs.getString('claude_model');
+    if (key != null) state.updateApiKey(key);
+    if (model != null) state.updateModel(model);
+  }
+
+  Future<void> updateApiKey(String key) async {
+    state.updateApiKey(key);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('claude_api_key', key);
+  }
+
+  Future<void> updateModel(String model) async {
+    state.updateModel(model);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('claude_model', model);
+  }
+}
 
 final aiServiceProvider =
     StateNotifierProvider<AiServiceNotifier, AiService>((ref) {
@@ -129,8 +192,15 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
 
     try {
       final aiService = _ref.read(aiServiceProvider);
+      final llmProvider = _ref.read(llmProviderTypeProvider);
+      final isCloud = llmProvider == LlmProviderType.claude;
 
-      final secretsLocked = _ref.read(secretsLockProvider);
+      // Auto-lock secrets when using a cloud LLM
+      if (isCloud) {
+        await _ref.read(secretsLockProvider.notifier).lock();
+      }
+
+      final secretsLocked = isCloud || _ref.read(secretsLockProvider);
 
       final List<VaultEntry> entries;
       if (secretsLocked) {
@@ -168,6 +238,7 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
       List<db.DocumentChunk>? ragChunks;
       List<String> ragDocumentTitles = [];
       List<ChatSession>? ragChatSessions;
+      List<({String title, String content})>? ragWikiPages;
       bool ragUsed = false;
 
       try {
@@ -270,6 +341,27 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
                   }
                 }
               }
+
+              // Wiki pages matched by RAG
+              final wikiIds = topK
+                  .where((s) => s.sourceType == 'wiki_page')
+                  .map((s) => s.sourceId) // sourceId is 'wiki:path/to/file.md'
+                  .toSet();
+              if (wikiIds.isNotEmpty) {
+                ragWikiPages = [];
+                for (final wikiId in wikiIds) {
+                  final filePath = wikiId.replaceFirst('wiki:', '');
+                  try {
+                    final content = await rootBundle.loadString('wiki/$filePath');
+                    // Extract title from first heading or use filename
+                    final titleMatch = RegExp(r'^#\s+(.+)$', multiLine: true).firstMatch(content);
+                    final title = titleMatch?.group(1) ?? filePath;
+                    ragWikiPages.add((title: title, content: content));
+                  } catch (_) {
+                    // Skip pages that fail to load
+                  }
+                }
+              }
             }
           }
         }
@@ -309,6 +401,7 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
           documentChunks: ragChunks,
           documentTitles: ragDocumentTitles,
           chatSessions: ragChatSessions,
+          wikiPages: ragWikiPages,
         );
 
         final ollamaTools = mcpService.getOllamaToolsJson();
@@ -477,6 +570,7 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
           ragSources: aiService.buildRagSourceSummary(
             ragEntries, ragNotes, ragIdeas, ragChunks,
             ragDocumentTitles, ragChatSessions,
+            wikiPages: ragWikiPages,
           ),
           toolCalls: allToolCalls,
           mcpUsed: true,
@@ -487,41 +581,175 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
           isProcessing: false,
           processingStatus: () => null,
         );
-      } else {
-        // Standard path — no MCP tools or model doesn't support them
-        final response = await aiService.chat(
-          query,
-          history,
-          entries,
-          notesList,
-          ideaList,
-          ragEntries: ragEntries,
-          ragNotes: ragNotes,
-          ragIdeas: ragIdeas,
-          ragChunks: ragChunks,
-          ragDocumentTitles: ragDocumentTitles,
-          ragChatSessions: ragChatSessions,
-          ragUsed: ragUsed,
-        );
+      } else if (isCloud) {
+        // Cloud LLM path — streaming from Claude API
+        final claudeService = _ref.read(claudeApiProvider);
 
         if (!mounted) return;
 
-        final assistantMessage = ChatMessage(
-          text: response.text,
-          isUser: false,
-          matchedEntries: response.matchedEntries,
-          matchedNotes: response.matchedNotes,
-          matchedIdeas: response.matchedIdeas,
-          aiOnline: response.aiOnline,
-          isVaultResult: response.isVaultResult,
-          ragUsed: response.ragUsed,
-          ragSources: response.ragSources,
+        // Build vault context without secrets (secrets are locked for cloud)
+        final contextNotes = (ragNotes != null && ragNotes.isNotEmpty)
+            ? ragNotes
+            : notesList;
+        final contextIdeas = (ragIdeas != null && ragIdeas.isNotEmpty)
+            ? ragIdeas
+            : ideaList;
+        final vaultContext = aiService.buildVaultContext(
+          [], // Never send secrets to cloud LLM
+          contextNotes,
+          ideas: contextIdeas,
+          documentChunks: ragChunks,
+          documentTitles: ragDocumentTitles,
+          chatSessions: ragChatSessions,
+          wikiPages: ragWikiPages,
         );
 
+        // Add placeholder assistant message for streaming
+        final placeholderMessage = ChatMessage(
+          text: '',
+          isUser: false,
+          aiOnline: true,
+          isCloudResponse: true,
+        );
         state = state.copyWith(
-          messages: [...state.messages, assistantMessage],
-          isProcessing: false,
+          messages: [...state.messages, placeholderMessage],
           processingStatus: () => null,
+        );
+
+        // Stream chunks and update the last message
+        final buffer = StringBuffer();
+        await for (final chunk in claudeService.streamChat(query, history, vaultContext)) {
+          if (!mounted) return;
+          buffer.write(chunk);
+          _updateLastMessage(buffer.toString());
+        }
+
+        if (!mounted) return;
+
+        final fullText = buffer.toString();
+        final referenced = aiService.extractReferencedItems(
+          fullText, entries, notesList, ideaList,
+        );
+        final cleanText = aiService.cleanResponse(fullText);
+
+        // Replace placeholder with final message including metadata
+        _replaceLastMessage(ChatMessage(
+          text: cleanText,
+          isUser: false,
+          matchedEntries: referenced.entries,
+          matchedNotes: referenced.notes,
+          matchedIdeas: referenced.ideas,
+          aiOnline: true,
+          isVaultResult: referenced.entries.isNotEmpty ||
+              referenced.notes.isNotEmpty ||
+              referenced.ideas.isNotEmpty,
+          ragUsed: ragUsed,
+          ragSources: aiService.buildRagSourceSummary(
+            ragEntries, ragNotes, ragIdeas, ragChunks,
+            ragDocumentTitles, ragChatSessions,
+            wikiPages: ragWikiPages,
+          ),
+          isCloudResponse: true,
+        ));
+
+        state = state.copyWith(
+          isProcessing: false,
+        );
+      } else {
+        // Standard streaming path — local Ollama, no MCP tools
+        final aiStatus = await aiService.checkStatus();
+        if (aiStatus.status != OllamaConnectionStatus.ready) {
+          if (!mounted) return;
+          final assistantMessage = ChatMessage(
+            text: "I'm currently offline. Connect Ollama to chat with me!",
+            isUser: false,
+            aiOnline: false,
+          );
+          state = state.copyWith(
+            messages: [...state.messages, assistantMessage],
+            isProcessing: false,
+            processingStatus: () => null,
+          );
+          return;
+        }
+
+        // Build vault context
+        final contextEntries = (ragEntries != null && ragEntries.isNotEmpty)
+            ? ragEntries
+            : entries;
+        final contextNotes = (ragNotes != null && ragNotes.isNotEmpty)
+            ? ragNotes
+            : notesList;
+        final contextIdeas = (ragIdeas != null && ragIdeas.isNotEmpty)
+            ? ragIdeas
+            : ideaList;
+        final vaultContext = aiService.buildVaultContext(
+          contextEntries,
+          contextNotes,
+          ideas: contextIdeas,
+          documentChunks: ragChunks,
+          documentTitles: ragDocumentTitles,
+          chatSessions: ragChatSessions,
+          wikiPages: ragWikiPages,
+        );
+
+        final messages = <Map<String, String>>[
+          {'role': 'system', 'content': '${AiService.systemPrompt}\n\n$vaultContext'},
+          ...history.map((m) => {
+                'role': m.isUser ? 'user' : 'assistant',
+                'content': m.text,
+              }),
+          {'role': 'user', 'content': query},
+        ];
+
+        // Add placeholder assistant message for streaming
+        final placeholderMessage = ChatMessage(
+          text: '',
+          isUser: false,
+          aiOnline: true,
+        );
+        state = state.copyWith(
+          messages: [...state.messages, placeholderMessage],
+          processingStatus: () => null,
+        );
+
+        // Stream chunks and update the last message
+        final buffer = StringBuffer();
+        await for (final chunk in aiService.streamChat(messages)) {
+          if (!mounted) return;
+          buffer.write(chunk);
+          _updateLastMessage(buffer.toString());
+        }
+
+        if (!mounted) return;
+
+        final fullText = buffer.toString();
+        final referenced = aiService.extractReferencedItems(
+          fullText, entries, notesList, ideaList,
+        );
+        final cleanText = aiService.cleanResponse(fullText);
+
+        // Replace placeholder with final message including metadata
+        _replaceLastMessage(ChatMessage(
+          text: cleanText,
+          isUser: false,
+          matchedEntries: referenced.entries,
+          matchedNotes: referenced.notes,
+          matchedIdeas: referenced.ideas,
+          aiOnline: true,
+          isVaultResult: referenced.entries.isNotEmpty ||
+              referenced.notes.isNotEmpty ||
+              referenced.ideas.isNotEmpty,
+          ragUsed: ragUsed,
+          ragSources: aiService.buildRagSourceSummary(
+            ragEntries, ragNotes, ragIdeas, ragChunks,
+            ragDocumentTitles, ragChatSessions,
+            wikiPages: ragWikiPages,
+          ),
+        ));
+
+        state = state.copyWith(
+          isProcessing: false,
         );
       }
     } catch (e) {
@@ -531,6 +759,28 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
         error: () => e.toString(),
       );
     }
+  }
+
+  /// Update the text of the last message in-place (for streaming).
+  void _updateLastMessage(String text) {
+    final msgs = [...state.messages];
+    if (msgs.isEmpty) return;
+    final last = msgs.last;
+    msgs[msgs.length - 1] = ChatMessage(
+      text: text,
+      isUser: last.isUser,
+      aiOnline: last.aiOnline,
+      isCloudResponse: last.isCloudResponse,
+    );
+    state = state.copyWith(messages: msgs);
+  }
+
+  /// Replace the last message entirely (final message with metadata).
+  void _replaceLastMessage(ChatMessage message) {
+    final msgs = [...state.messages];
+    if (msgs.isEmpty) return;
+    msgs[msgs.length - 1] = message;
+    state = state.copyWith(messages: msgs);
   }
 
   void newChat() {

@@ -11,6 +11,7 @@ import '../providers/ideas_provider.dart';
 import '../providers/notes_provider.dart';
 import '../providers/secrets_lock_provider.dart';
 import '../providers/server_provider.dart';
+import '../providers/embedding_provider.dart';
 import '../providers/vault_provider.dart';
 import '../providers/version_provider.dart';
 import '../services/ai_service.dart';
@@ -29,6 +30,7 @@ import 'chat_history_screen.dart';
 import 'expired_secrets_screen.dart';
 import 'server_management_screen.dart';
 import 'vault_list_screen.dart';
+import 'wiki_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -40,6 +42,15 @@ class HomeScreen extends ConsumerStatefulWidget {
 class _HomeScreenState extends ConsumerState<HomeScreen>
     with SingleTickerProviderStateMixin {
   bool _fabOpen = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Index wiki pages for RAG on first unlock
+    Future.microtask(() {
+      ref.read(embeddingIndexProvider.notifier).indexWikiPages();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -82,6 +93,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 : 'Lock secrets',
             onPressed: () =>
                 ref.read(secretsLockProvider.notifier).toggle(),
+          ),
+          IconButton(
+            icon: const Icon(Icons.menu_book, size: 20),
+            tooltip: 'Wiki',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const WikiScreen()),
+            ),
           ),
           IconButton(
             icon: const Icon(Icons.settings),

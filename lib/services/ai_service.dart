@@ -177,6 +177,7 @@ class AiService {
     List<db.DocumentChunk>? documentChunks,
     List<String> documentTitles = const [],
     List<ChatSession>? chatSessions,
+    List<({String title, String content})>? wikiPages,
   }) {
     final buf = StringBuffer();
     buf.writeln('=== USER RECORDS ===');
@@ -297,6 +298,21 @@ class AiService {
       }
     }
 
+    if (wikiPages != null && wikiPages.isNotEmpty) {
+      buf.writeln('--- AI VAULTIO WIKI (${wikiPages.length} page(s)) ---');
+      buf.writeln('The following is official documentation about AI VaultIO. '
+          'Use this to answer questions about the app, its features, and how to use them.');
+      buf.writeln();
+      for (final page in wikiPages) {
+        buf.writeln('Wiki: "${page.title}"');
+        final preview = page.content.length > 2000
+            ? '${page.content.substring(0, 2000)}...'
+            : page.content;
+        buf.writeln(preview);
+        buf.writeln();
+      }
+    }
+
     buf.writeln('=== END RECORDS ===');
     return buf.toString();
   }
@@ -353,8 +369,9 @@ class AiService {
     List<Idea>? ragIdeas,
     List<db.DocumentChunk>? ragChunks,
     List<String> documentTitles,
-    List<ChatSession>? chatSessions,
-  ) {
+    List<ChatSession>? chatSessions, {
+    List<({String title, String content})>? wikiPages,
+  }) {
     final sources = <String>[];
     if (ragEntries != null && ragEntries.isNotEmpty) {
       sources.add('${ragEntries.length} secret${ragEntries.length == 1 ? '' : 's'}');
@@ -375,6 +392,11 @@ class AiService {
     if (chatSessions != null && chatSessions.isNotEmpty) {
       sources.add(
         '${chatSessions.length} past chat${chatSessions.length == 1 ? '' : 's'}',
+      );
+    }
+    if (wikiPages != null && wikiPages.isNotEmpty) {
+      sources.add(
+        '${wikiPages.length} wiki page${wikiPages.length == 1 ? '' : 's'}',
       );
     }
     return sources;
@@ -599,6 +621,50 @@ class AiService {
       return null;
     }
   }
+
+  /// Stream a chat response from Ollama, yielding text chunks as they arrive.
+  Stream<String> streamChat(List<Map<String, String>> messages) async* {
+    try {
+      final request = http.Request(
+        'POST',
+        Uri.parse('$_serverUrl/api/chat'),
+      );
+      request.headers['Content-Type'] = 'application/json';
+      request.body = jsonEncode({
+        'model': _model,
+        'messages': messages,
+        'stream': true,
+        'options': {'temperature': 0.2},
+      });
+
+      final response = await http.Client().send(request).timeout(
+        const Duration(seconds: 120),
+      );
+
+      if (response.statusCode != 200) {
+        yield '[Error: Ollama returned status ${response.statusCode}]';
+        return;
+      }
+
+      await for (final chunk in response.stream.transform(utf8.decoder)) {
+        for (final line in chunk.split('\n')) {
+          if (line.trim().isEmpty) continue;
+          try {
+            final json = jsonDecode(line) as Map<String, dynamic>;
+            final message = json['message'] as Map<String, dynamic>?;
+            final content = message?['content'] as String? ?? '';
+            if (content.isNotEmpty) {
+              yield content;
+            }
+          } catch (_) {
+            // Skip malformed JSON lines
+          }
+        }
+      }
+    } catch (e) {
+      yield '[Error: $e]';
+    }
+  }
 }
 
 enum OllamaConnectionStatus {
@@ -630,6 +696,7 @@ class ChatMessage {
   final List<String> ragSources;
   final List<ToolCallInfo> toolCalls;
   final bool mcpUsed;
+  final bool isCloudResponse;
 
   const ChatMessage({
     required this.text,
@@ -643,6 +710,7 @@ class ChatMessage {
     this.ragSources = const [],
     this.toolCalls = const [],
     this.mcpUsed = false,
+    this.isCloudResponse = false,
   });
 }
 

@@ -46,6 +46,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     _focusNode.requestFocus();
   }
 
+  void _sendSuggestion(String text) {
+    ref.read(aiChatProvider.notifier).sendMessage(text);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+  }
+
   void _scrollToBottom() {
     if (_scrollController.hasClients) {
       _scrollController.animateTo(
@@ -268,6 +273,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             const SizedBox(width: 8),
             Text(chatState.loadedSessionTitle ?? 'AI Chat'),
             const SizedBox(width: 8),
+            _LlmProviderBadge(),
+            const SizedBox(width: 4),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
               decoration: BoxDecoration(
@@ -275,7 +282,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Text(
-                ref.watch(aiServiceProvider).model,
+                ref.watch(llmProviderTypeProvider) == LlmProviderType.claude
+                    ? ref.watch(claudeApiProvider).model.split('-').take(2).join(' ')
+                    : ref.watch(aiServiceProvider).model,
                 style: theme.textTheme.labelSmall?.copyWith(
                   color: theme.colorScheme.onPrimaryContainer,
                 ),
@@ -345,6 +354,29 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: theme.colorScheme.onSurfaceVariant,
                           ),
+                        ),
+                        const SizedBox(height: 24),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          alignment: WrapAlignment.center,
+                          children: [
+                            _SuggestionChip(
+                              label: 'What features does AI VaultIO have?',
+                              onTap: () => _sendSuggestion(
+                                  'What features does AI VaultIO have?'),
+                            ),
+                            _SuggestionChip(
+                              label: 'How does secrets encryption work?',
+                              onTap: () => _sendSuggestion(
+                                  'How does secrets encryption work?'),
+                            ),
+                            _SuggestionChip(
+                              label: 'How do I set up MCP servers?',
+                              onTap: () => _sendSuggestion(
+                                  'How do I set up MCP servers?'),
+                            ),
+                          ],
                         ),
                       ],
                     ),
@@ -1076,6 +1108,49 @@ class _SecretEntryCardState extends State<_SecretEntryCard> {
   }
 }
 
+class _LlmProviderBadge extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final provider = ref.watch(llmProviderTypeProvider);
+    final isCloud = provider == LlmProviderType.claude;
+    final theme = Theme.of(context);
+
+    return Tooltip(
+      message: isCloud
+          ? 'Using Claude (cloud) — secrets auto-locked'
+          : 'Using Ollama (local)',
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color: isCloud
+              ? Colors.blue.withValues(alpha: 0.12)
+              : Colors.green.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              isCloud ? Icons.cloud : Icons.smart_toy,
+              size: 12,
+              color: isCloud ? Colors.blue : Colors.green.shade700,
+            ),
+            const SizedBox(width: 3),
+            Text(
+              isCloud ? 'Cloud' : 'Local',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: isCloud ? Colors.blue : Colors.green.shade700,
+                fontWeight: FontWeight.w600,
+                fontSize: 10,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _SecretsLockBadge extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1160,6 +1235,31 @@ class _McpStatusBadge extends ConsumerWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _SuggestionChip extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+
+  const _SuggestionChip({required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return ActionChip(
+      label: Text(label),
+      avatar: Icon(Icons.menu_book, size: 16, color: theme.colorScheme.primary),
+      onPressed: onTap,
+      backgroundColor:
+          theme.colorScheme.primaryContainer.withValues(alpha: 0.4),
+      side: BorderSide(
+        color: theme.colorScheme.primary.withValues(alpha: 0.3),
+      ),
+      labelStyle: theme.textTheme.bodySmall?.copyWith(
+        color: theme.colorScheme.onSurface,
       ),
     );
   }
