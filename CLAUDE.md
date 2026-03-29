@@ -31,3 +31,15 @@ Schema version is in `lib/database/database.dart` (`schemaVersion`). When adding
 - **Encryption**: `EncryptionService` encrypts sensitive fields (secret values, note/idea bodies)
 - **Audit logging**: `AuditLogger` class injected into action providers; auth events logged from `lock_screen.dart` to avoid circular dependencies
 - **MCP client**: `McpService` manages connections to MCP servers via `mcp_dart` package; tools are passed to Ollama's `/api/chat` as function-calling tools; tool call results loop back to the LLM
+
+## Wiki Maintenance
+
+The in-app wiki lives in `wiki/` and is bundled as a Flutter asset. The wiki index is `wiki/wiki.json`. **Whenever you change code — adding features, modifying behavior, changing settings, updating configurations, or fixing bugs — you MUST update the relevant wiki pages to stay in sync.** This includes:
+
+- **New features**: Add a new markdown page under the appropriate section and register it in `wiki/wiki.json`.
+- **Changed behavior**: Update the wiki page that documents the affected feature.
+- **New settings/configuration**: Document them in the relevant wiki page (e.g., `wiki/features/` or `wiki/advanced/`).
+- **Removed features**: Remove or update the corresponding wiki page and its entry in `wiki/wiki.json`.
+- **Version bumps**: Update `wiki/advanced/changelog.md` with a summary of what changed.
+
+The wiki is indexed for RAG so users can ask the LLM about app features. Stale wiki content means the LLM gives wrong answers. Keep it accurate.
