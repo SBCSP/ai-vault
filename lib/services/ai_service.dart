@@ -630,6 +630,7 @@ class ChatMessage {
   final List<String> ragSources;
   final List<ToolCallInfo> toolCalls;
   final bool mcpUsed;
+  final bool isCloudResponse;
 
   const ChatMessage({
     required this.text,
@@ -643,6 +644,7 @@ class ChatMessage {
     this.ragSources = const [],
     this.toolCalls = const [],
     this.mcpUsed = false,
+    this.isCloudResponse = false,
   });
 }
 

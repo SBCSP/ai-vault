@@ -10,6 +10,7 @@ import '../models/idea.dart';
 import '../models/note.dart';
 import '../models/vault_entry.dart';
 import '../services/ai_service.dart';
+import '../services/claude_api_service.dart';
 import '../services/embedding_service.dart';
 import '../services/mcp_service.dart';
 import 'audit_provider.dart';
@@ -19,6 +20,67 @@ import 'mcp_provider.dart';
 import 'notes_provider.dart';
 import 'secrets_lock_provider.dart';
 import 'vault_provider.dart';
+
+// --- LLM Provider Type ---
+
+enum LlmProviderType { ollama, claude }
+
+/// Tracks which LLM backend is active and persists the selection.
+final llmProviderTypeProvider =
+    StateNotifierProvider<LlmProviderTypeNotifier, LlmProviderType>((ref) {
+  return LlmProviderTypeNotifier();
+});
+
+class LlmProviderTypeNotifier extends StateNotifier<LlmProviderType> {
+  LlmProviderTypeNotifier() : super(LlmProviderType.ollama) {
+    _load();
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final value = prefs.getString('llm_provider_type');
+    if (value == 'claude') state = LlmProviderType.claude;
+  }
+
+  Future<void> setProvider(LlmProviderType provider) async {
+    state = provider;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('llm_provider_type', provider.name);
+  }
+}
+
+// --- Claude API Provider ---
+
+final claudeApiProvider =
+    StateNotifierProvider<ClaudeApiNotifier, ClaudeApiService>((ref) {
+  return ClaudeApiNotifier();
+});
+
+class ClaudeApiNotifier extends StateNotifier<ClaudeApiService> {
+  ClaudeApiNotifier() : super(ClaudeApiService()) {
+    _load();
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final key = prefs.getString('claude_api_key');
+    final model = prefs.getString('claude_model');
+    if (key != null) state.updateApiKey(key);
+    if (model != null) state.updateModel(model);
+  }
+
+  Future<void> updateApiKey(String key) async {
+    state.updateApiKey(key);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('claude_api_key', key);
+  }
+
+  Future<void> updateModel(String model) async {
+    state.updateModel(model);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('claude_model', model);
+  }
+}
 
 final aiServiceProvider =
     StateNotifierProvider<AiServiceNotifier, AiService>((ref) {
@@ -129,8 +191,15 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
 
     try {
       final aiService = _ref.read(aiServiceProvider);
+      final llmProvider = _ref.read(llmProviderTypeProvider);
+      final isCloud = llmProvider == LlmProviderType.claude;
 
-      final secretsLocked = _ref.read(secretsLockProvider);
+      // Auto-lock secrets when using a cloud LLM
+      if (isCloud) {
+        await _ref.read(secretsLockProvider.notifier).lock();
+      }
+
+      final secretsLocked = isCloud || _ref.read(secretsLockProvider);
 
       final List<VaultEntry> entries;
       if (secretsLocked) {
@@ -487,8 +556,70 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
           isProcessing: false,
           processingStatus: () => null,
         );
+      } else if (isCloud) {
+        // Cloud LLM path — route to Claude API
+        final claudeService = _ref.read(claudeApiProvider);
+
+        if (!mounted) return;
+        state = state.copyWith(
+          processingStatus: () => 'Calling Claude API...',
+        );
+
+        // Build vault context without secrets (secrets are locked for cloud)
+        final contextNotes = (ragNotes != null && ragNotes.isNotEmpty)
+            ? ragNotes
+            : notesList;
+        final contextIdeas = (ragIdeas != null && ragIdeas.isNotEmpty)
+            ? ragIdeas
+            : ideaList;
+        final vaultContext = aiService.buildVaultContext(
+          [], // Never send secrets to cloud LLM
+          contextNotes,
+          ideas: contextIdeas,
+          documentChunks: ragChunks,
+          documentTitles: ragDocumentTitles,
+          chatSessions: ragChatSessions,
+        );
+
+        final claudeResponse = await claudeService.chat(
+          query,
+          history,
+          vaultContext,
+        );
+
+        if (!mounted) return;
+
+        // Extract [[referenced items]] from the response
+        final referenced = aiService.extractReferencedItems(
+          claudeResponse.text, entries, notesList, ideaList,
+        );
+        final cleanText = aiService.cleanResponse(claudeResponse.text);
+
+        final assistantMessage = ChatMessage(
+          text: cleanText,
+          isUser: false,
+          matchedEntries: referenced.entries,
+          matchedNotes: referenced.notes,
+          matchedIdeas: referenced.ideas,
+          aiOnline: claudeResponse.aiOnline,
+          isVaultResult: referenced.entries.isNotEmpty ||
+              referenced.notes.isNotEmpty ||
+              referenced.ideas.isNotEmpty,
+          ragUsed: ragUsed,
+          ragSources: aiService.buildRagSourceSummary(
+            ragEntries, ragNotes, ragIdeas, ragChunks,
+            ragDocumentTitles, ragChatSessions,
+          ),
+          isCloudResponse: true,
+        );
+
+        state = state.copyWith(
+          messages: [...state.messages, assistantMessage],
+          isProcessing: false,
+          processingStatus: () => null,
+        );
       } else {
-        // Standard path — no MCP tools or model doesn't support them
+        // Standard path — local Ollama, no MCP tools
         final response = await aiService.chat(
           query,
           history,
