@@ -3,9 +3,12 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
 
 import '../database/database.dart';
 import '../providers/server_provider.dart';
+import '../providers/version_provider.dart';
 import '../services/agent_certificate_service.dart';
 import 'server_dashboard_screen.dart';
 
@@ -20,6 +23,9 @@ class ServerManagementScreen extends ConsumerStatefulWidget {
 class _ServerManagementScreenState
     extends ConsumerState<ServerManagementScreen> {
   bool _generatingCerts = false;
+  bool _downloadingRpm = false;
+  bool _downloadingBinary = false;
+  String? _downloadError;
 
   @override
   Widget build(BuildContext context) {
@@ -256,6 +262,8 @@ class _ServerManagementScreenState
   }
 
   Widget _buildDownloadCard(ThemeData theme) {
+    final version = ref.watch(appVersionProvider);
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -266,38 +274,89 @@ class _ServerManagementScreenState
               children: [
                 Icon(Icons.download, color: theme.colorScheme.primary),
                 const SizedBox(width: 8),
-                Text(
-                  'Download Agent',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
+                Expanded(
+                  child: Text(
+                    'Download Agent',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primaryContainer,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text('v$version',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: theme.colorScheme.onPrimaryContainer,
+                      )),
                 ),
               ],
             ),
             const SizedBox(height: 8),
             Text(
-              'Download the aiv_agent installer to deploy on your Linux server. '
-              'The .rpm package includes the server certificates for mTLS authentication.',
+              'Download the matching aiv_agent v$version to deploy on your Linux server. '
+              'After downloading, copy the agent and your server certificates to the remote host.',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
             const SizedBox(height: 12),
+            if (_downloadError != null) ...[
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.errorContainer,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.error_outline, size: 16,
+                        color: theme.colorScheme.onErrorContainer),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(_downloadError!,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onErrorContainer,
+                          )),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
             Wrap(
               spacing: 8,
               runSpacing: 8,
               children: [
                 FilledButton.icon(
-                  onPressed: () => _showCertsLocationDialog(),
-                  icon: const Icon(Icons.download, size: 18),
-                  label: const Text('.rpm (Linux)'),
+                  onPressed: _downloadingRpm ? null : () => _downloadAgent('rpm'),
+                  icon: _downloadingRpm
+                      ? const SizedBox(
+                          width: 16, height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.download, size: 18),
+                  label: Text(_downloadingRpm ? 'Downloading...' : '.rpm (Linux)'),
                 ),
                 OutlinedButton.icon(
-                  onPressed: null, // Coming soon
-                  icon: const Icon(Icons.download, size: 18),
-                  label: const Text('.deb (Coming soon)'),
+                  onPressed: _downloadingBinary ? null : () => _downloadAgent('binary'),
+                  icon: _downloadingBinary
+                      ? const SizedBox(
+                          width: 16, height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.download, size: 18),
+                  label: Text(_downloadingBinary ? 'Downloading...' : 'Standalone Binary'),
                 ),
               ],
+            ),
+            const SizedBox(height: 8),
+            TextButton.icon(
+              onPressed: () => _showInstallInstructions(),
+              icon: const Icon(Icons.help_outline, size: 16),
+              label: const Text('Install instructions'),
             ),
           ],
         ),
@@ -358,67 +417,241 @@ class _ServerManagementScreenState
     }
   }
 
-  Future<void> _showCertsLocationDialog() async {
+  /// Downloads the aiv_agent from the matching GitHub Release.
+  Future<void> _downloadAgent(String type) async {
+    final version = ref.read(appVersionProvider);
     final certsDir = await AgentCertificateService.certsDirectoryPath;
 
-    if (!mounted) return;
+    // Determine download URL and filename
+    final String url;
+    final String filename;
+    if (type == 'rpm') {
+      // RPM filename from GitHub Release
+      url = 'https://github.com/SBCSP/ai-vault/releases/download/v$version/aiv_agent-$version-1.x86_64.rpm';
+      filename = 'aiv_agent-$version-1.x86_64.rpm';
+      setState(() { _downloadingRpm = true; _downloadError = null; });
+    } else {
+      url = 'https://github.com/SBCSP/ai-vault/releases/download/v$version/aiv_agent-linux-amd64';
+      filename = 'aiv_agent-linux-amd64';
+      setState(() { _downloadingBinary = true; _downloadError = null; });
+    }
+
+    try {
+      // Download to the agent_certs directory (user already knows this path)
+      final downloadsDir = Directory('$certsDir/downloads');
+      if (!await downloadsDir.exists()) {
+        await downloadsDir.create(recursive: true);
+      }
+      final filePath = '${downloadsDir.path}/$filename';
+
+      final response = await http.get(Uri.parse(url));
+      if (response.statusCode == 200) {
+        await File(filePath).writeAsBytes(response.bodyBytes);
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Downloaded $filename'),
+            action: SnackBarAction(
+              label: 'Show path',
+              onPressed: () => _showDownloadSuccessDialog(filePath, certsDir),
+            ),
+          ));
+          _showDownloadSuccessDialog(filePath, certsDir);
+        }
+      } else if (response.statusCode == 404) {
+        setState(() => _downloadError =
+            'v$version release not found on GitHub. The release may still be building.');
+      } else {
+        setState(() => _downloadError =
+            'Download failed (HTTP ${response.statusCode})');
+      }
+    } catch (e) {
+      setState(() => _downloadError = 'Download failed: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _downloadingRpm = false;
+          _downloadingBinary = false;
+        });
+      }
+    }
+  }
+
+  void _showDownloadSuccessDialog(String filePath, String certsDir) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Agent Download'),
+        title: Row(
+          children: [
+            const Icon(Icons.check_circle, color: Colors.green, size: 24),
+            const SizedBox(width: 8),
+            const Text('Download Complete'),
+          ],
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'The server certificates needed for the agent are located at:',
-            ),
+            const Text('Agent downloaded to:'),
+            const SizedBox(height: 8),
+            _copiablePath(ctx, filePath),
             const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Theme.of(ctx).colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: SelectableText(
-                      certsDir,
-                      style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.copy, size: 16),
-                    onPressed: () {
-                      Clipboard.setData(ClipboardData(text: certsDir));
-                      ScaffoldMessenger.of(ctx).showSnackBar(
-                        const SnackBar(content: Text('Path copied')),
-                      );
-                    },
-                  ),
-                ],
-              ),
-            ),
+            const Text('Server certificates are at:'),
+            const SizedBox(height: 8),
+            _copiablePath(ctx, certsDir),
             const SizedBox(height: 16),
             const Text(
-              'To deploy to your Linux server:\n\n'
-              '1. Build the agent RPM:\n'
-              '   cd aiv_agent && make rpm\n\n'
-              '2. Copy the .rpm and certs to your server:\n'
-              '   scp build/rpm/RPMS/**/*.rpm user@server:\n'
-              '   scp <certs_dir>/server.* <certs_dir>/ca.crt user@server:/etc/aiv_agent/\n\n'
-              '3. Install on the server:\n'
-              '   sudo rpm -i aiv_agent-*.rpm\n\n'
-              '4. The agent will start automatically on port 9090.',
+              'Next steps:\n\n'
+              '1. Copy the agent + certs to your server:\n'
+              '   scp <agent_file> user@server:\n'
+              '   scp server.crt server.key ca.crt user@server:/etc/aiv_agent/\n\n'
+              '2. Install the agent on the server\n\n'
+              '3. Add the server in AI VaultIO to start monitoring',
               style: TextStyle(fontSize: 13),
             ),
           ],
         ),
         actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _showInstallInstructions();
+            },
+            child: const Text('Full instructions'),
+          ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Got it'),
+            child: const Text('Done'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _copiablePath(BuildContext ctx, String path) {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Theme.of(ctx).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: SelectableText(path,
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 11)),
+          ),
+          IconButton(
+            icon: const Icon(Icons.copy, size: 14),
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: path));
+              ScaffoldMessenger.of(ctx).showSnackBar(
+                const SnackBar(content: Text('Copied to clipboard')),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showInstallInstructions() {
+    final version = ref.read(appVersionProvider);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Install Instructions'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'RPM Install (RHEL/CentOS/Fedora/Amazon Linux)',
+                style: Theme.of(ctx).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              _codeBlock(
+                '# Copy files to your server\n'
+                'scp aiv_agent-$version-1.x86_64.rpm user@server:\n'
+                'scp server.crt server.key ca.crt user@server:/tmp/\n\n'
+                '# On the server:\n'
+                'sudo rpm -i aiv_agent-$version-1.x86_64.rpm\n'
+                'sudo cp /tmp/{server.crt,server.key,ca.crt} /etc/aiv_agent/\n'
+                'sudo chown aiv_agent:aiv_agent /etc/aiv_agent/*\n'
+                'sudo chmod 600 /etc/aiv_agent/server.key\n'
+                'sudo systemctl restart aiv_agent',
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Standalone Binary',
+                style: Theme.of(ctx).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              _codeBlock(
+                '# Copy to server\n'
+                'scp aiv_agent-linux-amd64 user@server:\n'
+                'scp server.crt server.key ca.crt user@server:/tmp/\n\n'
+                '# On the server:\n'
+                'sudo cp aiv_agent-linux-amd64 /usr/local/bin/aiv_agent\n'
+                'sudo chmod +x /usr/local/bin/aiv_agent\n'
+                'sudo mkdir -p /etc/aiv_agent\n'
+                'sudo cp /tmp/{server.crt,server.key,ca.crt} /etc/aiv_agent/\n\n'
+                '# Run the agent:\n'
+                'sudo aiv_agent --port 9090',
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Verify',
+                style: Theme.of(ctx).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              _codeBlock(
+                '# Check agent status\n'
+                'sudo systemctl status aiv_agent\n\n'
+                '# View logs\n'
+                'sudo journalctl -u aiv_agent -f',
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Done'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _codeBlock(String code) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Stack(
+        children: [
+          SelectableText(code,
+              style: const TextStyle(fontFamily: 'monospace', fontSize: 11)),
+          Positioned(
+            top: 0,
+            right: 0,
+            child: IconButton(
+              icon: const Icon(Icons.copy, size: 14),
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: code));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Copied')),
+                );
+              },
+            ),
           ),
         ],
       ),
