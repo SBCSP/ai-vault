@@ -15,6 +15,7 @@ import 'aws_settings_screen.dart';
 import 'mcp_servers_screen.dart';
 import 'ollama_screen.dart';
 import 'server_management_screen.dart';
+import 'wiki_screen.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -158,6 +159,56 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                                 ),
                                 Text(
                                   'Manage remote servers with aiv_agent',
+                                  style:
+                                      theme.textTheme.bodySmall?.copyWith(
+                                    color: theme
+                                        .colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Icon(
+                            Icons.arrow_forward_ios,
+                            size: 16,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                // Wiki card
+                Card(
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const WikiScreen()),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
+                        children: [
+                          Icon(Icons.menu_book,
+                              color: theme.colorScheme.primary),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment:
+                                  CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Wiki',
+                                  style: theme.textTheme.titleMedium
+                                      ?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                Text(
+                                  'Documentation and guides',
                                   style:
                                       theme.textTheme.bodySmall?.copyWith(
                                     color: theme

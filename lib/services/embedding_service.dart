@@ -108,6 +108,12 @@ class EmbeddingService {
     return 'Document: $documentTitle\n\n$chunkContent';
   }
 
+  /// Build embeddable text for a wiki page.
+  static String buildWikiPageText(String pageTitle, String content) {
+    final preview = content.length > 3000 ? content.substring(0, 3000) : content;
+    return 'AI VaultIO Wiki: $pageTitle\n\n$preview';
+  }
+
   /// Build embeddable text for a chat session.
   /// Combines user and assistant messages into a coherent narrative.
   static String buildChatSessionText(

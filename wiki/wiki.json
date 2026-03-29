@@ -1,0 +1,48 @@
+{
+  "title": "AI VaultIO Wiki",
+  "version": "1.2.1",
+  "sections": [
+    {
+      "title": "Getting Started",
+      "icon": "rocket_launch",
+      "pages": [
+        {"title": "Welcome", "file": "getting-started/welcome.md"},
+        {"title": "Installation", "file": "getting-started/installation.md"},
+        {"title": "First Steps", "file": "getting-started/first-steps.md"}
+      ]
+    },
+    {
+      "title": "Features",
+      "icon": "auto_awesome",
+      "pages": [
+        {"title": "Secrets Management", "file": "features/secrets.md"},
+        {"title": "Notes & Ideas", "file": "features/notes-ideas.md"},
+        {"title": "Documents", "file": "features/documents.md"},
+        {"title": "AI Chat", "file": "features/ai-chat.md"},
+        {"title": "RAG Search", "file": "features/rag-search.md"},
+        {"title": "MCP Servers", "file": "features/mcp-servers.md"},
+        {"title": "Claude API", "file": "features/claude-api.md"},
+        {"title": "Server Monitoring", "file": "features/server-monitoring.md"}
+      ]
+    },
+    {
+      "title": "Security",
+      "icon": "shield",
+      "pages": [
+        {"title": "Encryption", "file": "security/encryption.md"},
+        {"title": "Secrets Lock", "file": "security/secrets-lock.md"},
+        {"title": "Vault API", "file": "security/vault-api.md"},
+        {"title": "Audit Logging", "file": "security/audit-logging.md"}
+      ]
+    },
+    {
+      "title": "Advanced",
+      "icon": "settings",
+      "pages": [
+        {"title": "AWS Integration", "file": "advanced/aws-integration.md"},
+        {"title": "Agent Setup", "file": "advanced/agent-setup.md"},
+        {"title": "Changelog", "file": "advanced/changelog.md"}
+      ]
+    }
+  ]
+}

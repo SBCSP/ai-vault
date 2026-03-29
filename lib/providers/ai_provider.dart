@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -237,6 +238,7 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
       List<db.DocumentChunk>? ragChunks;
       List<String> ragDocumentTitles = [];
       List<ChatSession>? ragChatSessions;
+      List<({String title, String content})>? ragWikiPages;
       bool ragUsed = false;
 
       try {
@@ -339,6 +341,27 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
                   }
                 }
               }
+
+              // Wiki pages matched by RAG
+              final wikiIds = topK
+                  .where((s) => s.sourceType == 'wiki_page')
+                  .map((s) => s.sourceId) // sourceId is 'wiki:path/to/file.md'
+                  .toSet();
+              if (wikiIds.isNotEmpty) {
+                ragWikiPages = [];
+                for (final wikiId in wikiIds) {
+                  final filePath = wikiId.replaceFirst('wiki:', '');
+                  try {
+                    final content = await rootBundle.loadString('wiki/$filePath');
+                    // Extract title from first heading or use filename
+                    final titleMatch = RegExp(r'^#\s+(.+)$', multiLine: true).firstMatch(content);
+                    final title = titleMatch?.group(1) ?? filePath;
+                    ragWikiPages.add((title: title, content: content));
+                  } catch (_) {
+                    // Skip pages that fail to load
+                  }
+                }
+              }
             }
           }
         }
@@ -378,6 +401,7 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
           documentChunks: ragChunks,
           documentTitles: ragDocumentTitles,
           chatSessions: ragChatSessions,
+          wikiPages: ragWikiPages,
         );
 
         final ollamaTools = mcpService.getOllamaToolsJson();
@@ -546,6 +570,7 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
           ragSources: aiService.buildRagSourceSummary(
             ragEntries, ragNotes, ragIdeas, ragChunks,
             ragDocumentTitles, ragChatSessions,
+            wikiPages: ragWikiPages,
           ),
           toolCalls: allToolCalls,
           mcpUsed: true,
@@ -576,6 +601,7 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
           documentChunks: ragChunks,
           documentTitles: ragDocumentTitles,
           chatSessions: ragChatSessions,
+          wikiPages: ragWikiPages,
         );
 
         // Add placeholder assistant message for streaming
@@ -621,6 +647,7 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
           ragSources: aiService.buildRagSourceSummary(
             ragEntries, ragNotes, ragIdeas, ragChunks,
             ragDocumentTitles, ragChatSessions,
+            wikiPages: ragWikiPages,
           ),
           isCloudResponse: true,
         ));
@@ -663,6 +690,7 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
           documentChunks: ragChunks,
           documentTitles: ragDocumentTitles,
           chatSessions: ragChatSessions,
+          wikiPages: ragWikiPages,
         );
 
         final messages = <Map<String, String>>[
@@ -716,6 +744,7 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
           ragSources: aiService.buildRagSourceSummary(
             ragEntries, ragNotes, ragIdeas, ragChunks,
             ragDocumentTitles, ragChatSessions,
+            wikiPages: ragWikiPages,
           ),
         ));
 

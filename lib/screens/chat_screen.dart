@@ -46,6 +46,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     _focusNode.requestFocus();
   }
 
+  void _sendSuggestion(String text) {
+    ref.read(aiChatProvider.notifier).sendMessage(text);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+  }
+
   void _scrollToBottom() {
     if (_scrollController.hasClients) {
       _scrollController.animateTo(
@@ -349,6 +354,29 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: theme.colorScheme.onSurfaceVariant,
                           ),
+                        ),
+                        const SizedBox(height: 24),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          alignment: WrapAlignment.center,
+                          children: [
+                            _SuggestionChip(
+                              label: 'What features does AI VaultIO have?',
+                              onTap: () => _sendSuggestion(
+                                  'What features does AI VaultIO have?'),
+                            ),
+                            _SuggestionChip(
+                              label: 'How does secrets encryption work?',
+                              onTap: () => _sendSuggestion(
+                                  'How does secrets encryption work?'),
+                            ),
+                            _SuggestionChip(
+                              label: 'How do I set up MCP servers?',
+                              onTap: () => _sendSuggestion(
+                                  'How do I set up MCP servers?'),
+                            ),
+                          ],
                         ),
                       ],
                     ),
@@ -1207,6 +1235,31 @@ class _McpStatusBadge extends ConsumerWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _SuggestionChip extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+
+  const _SuggestionChip({required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return ActionChip(
+      label: Text(label),
+      avatar: Icon(Icons.menu_book, size: 16, color: theme.colorScheme.primary),
+      onPressed: onTap,
+      backgroundColor:
+          theme.colorScheme.primaryContainer.withValues(alpha: 0.4),
+      side: BorderSide(
+        color: theme.colorScheme.primary.withValues(alpha: 0.3),
+      ),
+      labelStyle: theme.textTheme.bodySmall?.copyWith(
+        color: theme.colorScheme.onSurface,
       ),
     );
   }

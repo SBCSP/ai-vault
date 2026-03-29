@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:drift/drift.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
@@ -332,6 +333,62 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
   Future<void> removeChatSession(String id) async {
     await _db.deleteEmbeddingBySourceId(id);
     await refreshStats();
+  }
+
+  /// Index all wiki pages from bundled assets.
+  /// Uses a version-based hash so pages are only re-indexed when the app updates.
+  Future<void> indexWikiPages() async {
+    try {
+      final jsonStr = await rootBundle.loadString('wiki/wiki.json');
+      final json = jsonDecode(jsonStr) as Map<String, dynamic>;
+      final wikiVersion = json['version'] as String? ?? '';
+      final sections = json['sections'] as List<dynamic>;
+
+      for (final section in sections) {
+        final sec = section as Map<String, dynamic>;
+        final pages = sec['pages'] as List<dynamic>;
+        for (final page in pages) {
+          if (!mounted) return;
+          final p = page as Map<String, dynamic>;
+          final title = p['title'] as String;
+          final file = p['file'] as String;
+          final sourceId = 'wiki:$file';
+
+          try {
+            final content = await rootBundle.loadString('wiki/$file');
+            final text = EmbeddingService.buildWikiPageText(title, content);
+            // Include version in hash so pages re-index on app update
+            final hash = EmbeddingService.computeContentHash('$wikiVersion:$text');
+
+            final existing = await _db.getEmbeddingBySourceId(sourceId);
+            if (existing != null &&
+                existing.contentHash == hash &&
+                existing.modelName == _modelName) {
+              continue; // Already indexed with same content
+            }
+
+            final vector = await _service.generateEmbedding(text);
+            if (vector == null) continue;
+
+            await _db.upsertEmbedding(EmbeddingsCompanion(
+              id: Value(existing?.id ?? _uuid.v4()),
+              sourceId: Value(sourceId),
+              sourceType: const Value('wiki_page'),
+              embedding: Value(jsonEncode(vector)),
+              modelName: Value(_modelName),
+              contentHash: Value(hash),
+              createdAt: Value(DateTime.now()),
+            ));
+          } catch (_) {
+            // Skip pages that fail to load
+          }
+        }
+      }
+
+      await refreshStats();
+    } catch (_) {
+      // Wiki index not available — skip silently
+    }
   }
 
   /// Re-index all entries, notes, documents, and chat sessions from scratch.

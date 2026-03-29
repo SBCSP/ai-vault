@@ -177,6 +177,7 @@ class AiService {
     List<db.DocumentChunk>? documentChunks,
     List<String> documentTitles = const [],
     List<ChatSession>? chatSessions,
+    List<({String title, String content})>? wikiPages,
   }) {
     final buf = StringBuffer();
     buf.writeln('=== USER RECORDS ===');
@@ -297,6 +298,21 @@ class AiService {
       }
     }
 
+    if (wikiPages != null && wikiPages.isNotEmpty) {
+      buf.writeln('--- AI VAULTIO WIKI (${wikiPages.length} page(s)) ---');
+      buf.writeln('The following is official documentation about AI VaultIO. '
+          'Use this to answer questions about the app, its features, and how to use them.');
+      buf.writeln();
+      for (final page in wikiPages) {
+        buf.writeln('Wiki: "${page.title}"');
+        final preview = page.content.length > 2000
+            ? '${page.content.substring(0, 2000)}...'
+            : page.content;
+        buf.writeln(preview);
+        buf.writeln();
+      }
+    }
+
     buf.writeln('=== END RECORDS ===');
     return buf.toString();
   }
@@ -353,8 +369,9 @@ class AiService {
     List<Idea>? ragIdeas,
     List<db.DocumentChunk>? ragChunks,
     List<String> documentTitles,
-    List<ChatSession>? chatSessions,
-  ) {
+    List<ChatSession>? chatSessions, {
+    List<({String title, String content})>? wikiPages,
+  }) {
     final sources = <String>[];
     if (ragEntries != null && ragEntries.isNotEmpty) {
       sources.add('${ragEntries.length} secret${ragEntries.length == 1 ? '' : 's'}');
@@ -375,6 +392,11 @@ class AiService {
     if (chatSessions != null && chatSessions.isNotEmpty) {
       sources.add(
         '${chatSessions.length} past chat${chatSessions.length == 1 ? '' : 's'}',
+      );
+    }
+    if (wikiPages != null && wikiPages.isNotEmpty) {
+      sources.add(
+        '${wikiPages.length} wiki page${wikiPages.length == 1 ? '' : 's'}',
       );
     }
     return sources;
