@@ -142,6 +142,95 @@ class ClaudeApiService {
     }
   }
 
+  /// Stream a chat response from Claude API, yielding text chunks via SSE.
+  Stream<String> streamChat(
+    String query,
+    List<ChatMessage> history,
+    String vaultContext,
+  ) async* {
+    if (!isConfigured) {
+      yield 'Claude API key not configured. Go to Settings to add your API key.';
+      return;
+    }
+
+    try {
+      final messages = <Map<String, String>>[
+        ...history.map((m) => {
+              'role': m.isUser ? 'user' : 'assistant',
+              'content': m.text,
+            }),
+        {'role': 'user', 'content': query},
+      ];
+
+      final systemPrompt =
+          '${AiService.systemPrompt}\n\n'
+          'IMPORTANT: You are running as a CLOUD model. Secrets have been automatically '
+          'locked for security. You can access notes, ideas, and documents but NOT secrets. '
+          'If the user asks about secrets, remind them to switch to a local Ollama model '
+          'to access secrets securely.\n\n'
+          '$vaultContext';
+
+      final body = {
+        'model': _model,
+        'max_tokens': 4096,
+        'stream': true,
+        'system': systemPrompt,
+        'messages': messages,
+      };
+
+      final request = http.Request('POST', Uri.parse(_apiUrl));
+      request.headers.addAll(_headers());
+      request.body = jsonEncode(body);
+
+      final response = await http.Client().send(request).timeout(
+        const Duration(seconds: 120),
+      );
+
+      if (response.statusCode != 200) {
+        // Read full body for error
+        final errorBody = await response.stream.bytesToString();
+        try {
+          final json = jsonDecode(errorBody) as Map<String, dynamic>;
+          final error = json['error'] as Map<String, dynamic>?;
+          yield 'Claude API error: ${error?['message'] ?? 'HTTP ${response.statusCode}'}';
+        } catch (_) {
+          yield 'Claude API error: HTTP ${response.statusCode}';
+        }
+        return;
+      }
+
+      // Parse SSE stream — Claude sends events like:
+      // event: content_block_delta
+      // data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}
+      await for (final chunk in response.stream.transform(utf8.decoder)) {
+        for (final line in chunk.split('\n')) {
+          if (!line.startsWith('data: ')) continue;
+          final data = line.substring(6);
+          if (data == '[DONE]') return;
+          try {
+            final json = jsonDecode(data) as Map<String, dynamic>;
+            final type = json['type'] as String?;
+            if (type == 'content_block_delta') {
+              final delta = json['delta'] as Map<String, dynamic>?;
+              if (delta?['type'] == 'text_delta') {
+                final text = delta!['text'] as String? ?? '';
+                if (text.isNotEmpty) yield text;
+              }
+            } else if (type == 'error') {
+              final error = json['error'] as Map<String, dynamic>?;
+              yield '\n[Error: ${error?['message'] ?? 'Unknown error'}]';
+              return;
+            }
+          } catch (_) {
+            // Skip malformed SSE lines
+          }
+        }
+      }
+    } catch (e) {
+      yield '[Error: Failed to reach Claude API: $e]';
+    }
+  }
+
   Map<String, String> _headers() => {
         'Content-Type': 'application/json',
         'x-api-key': _apiKey,

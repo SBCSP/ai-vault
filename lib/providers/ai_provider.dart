@@ -557,13 +557,10 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
           processingStatus: () => null,
         );
       } else if (isCloud) {
-        // Cloud LLM path — route to Claude API
+        // Cloud LLM path — streaming from Claude API
         final claudeService = _ref.read(claudeApiProvider);
 
         if (!mounted) return;
-        state = state.copyWith(
-          processingStatus: () => 'Calling Claude API...',
-        );
 
         // Build vault context without secrets (secrets are locked for cloud)
         final contextNotes = (ragNotes != null && ragNotes.isNotEmpty)
@@ -581,27 +578,42 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
           chatSessions: ragChatSessions,
         );
 
-        final claudeResponse = await claudeService.chat(
-          query,
-          history,
-          vaultContext,
+        // Add placeholder assistant message for streaming
+        final placeholderMessage = ChatMessage(
+          text: '',
+          isUser: false,
+          aiOnline: true,
+          isCloudResponse: true,
         );
+        state = state.copyWith(
+          messages: [...state.messages, placeholderMessage],
+          processingStatus: () => null,
+        );
+
+        // Stream chunks and update the last message
+        final buffer = StringBuffer();
+        await for (final chunk in claudeService.streamChat(query, history, vaultContext)) {
+          if (!mounted) return;
+          buffer.write(chunk);
+          _updateLastMessage(buffer.toString());
+        }
 
         if (!mounted) return;
 
-        // Extract [[referenced items]] from the response
+        final fullText = buffer.toString();
         final referenced = aiService.extractReferencedItems(
-          claudeResponse.text, entries, notesList, ideaList,
+          fullText, entries, notesList, ideaList,
         );
-        final cleanText = aiService.cleanResponse(claudeResponse.text);
+        final cleanText = aiService.cleanResponse(fullText);
 
-        final assistantMessage = ChatMessage(
+        // Replace placeholder with final message including metadata
+        _replaceLastMessage(ChatMessage(
           text: cleanText,
           isUser: false,
           matchedEntries: referenced.entries,
           matchedNotes: referenced.notes,
           matchedIdeas: referenced.ideas,
-          aiOnline: claudeResponse.aiOnline,
+          aiOnline: true,
           isVaultResult: referenced.entries.isNotEmpty ||
               referenced.notes.isNotEmpty ||
               referenced.ideas.isNotEmpty,
@@ -611,48 +623,104 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
             ragDocumentTitles, ragChatSessions,
           ),
           isCloudResponse: true,
-        );
+        ));
 
         state = state.copyWith(
-          messages: [...state.messages, assistantMessage],
           isProcessing: false,
-          processingStatus: () => null,
         );
       } else {
-        // Standard path — local Ollama, no MCP tools
-        final response = await aiService.chat(
-          query,
-          history,
-          entries,
-          notesList,
-          ideaList,
-          ragEntries: ragEntries,
-          ragNotes: ragNotes,
-          ragIdeas: ragIdeas,
-          ragChunks: ragChunks,
-          ragDocumentTitles: ragDocumentTitles,
-          ragChatSessions: ragChatSessions,
-          ragUsed: ragUsed,
+        // Standard streaming path — local Ollama, no MCP tools
+        final aiStatus = await aiService.checkStatus();
+        if (aiStatus.status != OllamaConnectionStatus.ready) {
+          if (!mounted) return;
+          final assistantMessage = ChatMessage(
+            text: "I'm currently offline. Connect Ollama to chat with me!",
+            isUser: false,
+            aiOnline: false,
+          );
+          state = state.copyWith(
+            messages: [...state.messages, assistantMessage],
+            isProcessing: false,
+            processingStatus: () => null,
+          );
+          return;
+        }
+
+        // Build vault context
+        final contextEntries = (ragEntries != null && ragEntries.isNotEmpty)
+            ? ragEntries
+            : entries;
+        final contextNotes = (ragNotes != null && ragNotes.isNotEmpty)
+            ? ragNotes
+            : notesList;
+        final contextIdeas = (ragIdeas != null && ragIdeas.isNotEmpty)
+            ? ragIdeas
+            : ideaList;
+        final vaultContext = aiService.buildVaultContext(
+          contextEntries,
+          contextNotes,
+          ideas: contextIdeas,
+          documentChunks: ragChunks,
+          documentTitles: ragDocumentTitles,
+          chatSessions: ragChatSessions,
         );
+
+        final messages = <Map<String, String>>[
+          {'role': 'system', 'content': '${AiService.systemPrompt}\n\n$vaultContext'},
+          ...history.map((m) => {
+                'role': m.isUser ? 'user' : 'assistant',
+                'content': m.text,
+              }),
+          {'role': 'user', 'content': query},
+        ];
+
+        // Add placeholder assistant message for streaming
+        final placeholderMessage = ChatMessage(
+          text: '',
+          isUser: false,
+          aiOnline: true,
+        );
+        state = state.copyWith(
+          messages: [...state.messages, placeholderMessage],
+          processingStatus: () => null,
+        );
+
+        // Stream chunks and update the last message
+        final buffer = StringBuffer();
+        await for (final chunk in aiService.streamChat(messages)) {
+          if (!mounted) return;
+          buffer.write(chunk);
+          _updateLastMessage(buffer.toString());
+        }
 
         if (!mounted) return;
 
-        final assistantMessage = ChatMessage(
-          text: response.text,
-          isUser: false,
-          matchedEntries: response.matchedEntries,
-          matchedNotes: response.matchedNotes,
-          matchedIdeas: response.matchedIdeas,
-          aiOnline: response.aiOnline,
-          isVaultResult: response.isVaultResult,
-          ragUsed: response.ragUsed,
-          ragSources: response.ragSources,
+        final fullText = buffer.toString();
+        final referenced = aiService.extractReferencedItems(
+          fullText, entries, notesList, ideaList,
         );
+        final cleanText = aiService.cleanResponse(fullText);
+
+        // Replace placeholder with final message including metadata
+        _replaceLastMessage(ChatMessage(
+          text: cleanText,
+          isUser: false,
+          matchedEntries: referenced.entries,
+          matchedNotes: referenced.notes,
+          matchedIdeas: referenced.ideas,
+          aiOnline: true,
+          isVaultResult: referenced.entries.isNotEmpty ||
+              referenced.notes.isNotEmpty ||
+              referenced.ideas.isNotEmpty,
+          ragUsed: ragUsed,
+          ragSources: aiService.buildRagSourceSummary(
+            ragEntries, ragNotes, ragIdeas, ragChunks,
+            ragDocumentTitles, ragChatSessions,
+          ),
+        ));
 
         state = state.copyWith(
-          messages: [...state.messages, assistantMessage],
           isProcessing: false,
-          processingStatus: () => null,
         );
       }
     } catch (e) {
@@ -662,6 +730,28 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
         error: () => e.toString(),
       );
     }
+  }
+
+  /// Update the text of the last message in-place (for streaming).
+  void _updateLastMessage(String text) {
+    final msgs = [...state.messages];
+    if (msgs.isEmpty) return;
+    final last = msgs.last;
+    msgs[msgs.length - 1] = ChatMessage(
+      text: text,
+      isUser: last.isUser,
+      aiOnline: last.aiOnline,
+      isCloudResponse: last.isCloudResponse,
+    );
+    state = state.copyWith(messages: msgs);
+  }
+
+  /// Replace the last message entirely (final message with metadata).
+  void _replaceLastMessage(ChatMessage message) {
+    final msgs = [...state.messages];
+    if (msgs.isEmpty) return;
+    msgs[msgs.length - 1] = message;
+    state = state.copyWith(messages: msgs);
   }
 
   void newChat() {

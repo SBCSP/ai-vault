@@ -599,6 +599,50 @@ class AiService {
       return null;
     }
   }
+
+  /// Stream a chat response from Ollama, yielding text chunks as they arrive.
+  Stream<String> streamChat(List<Map<String, String>> messages) async* {
+    try {
+      final request = http.Request(
+        'POST',
+        Uri.parse('$_serverUrl/api/chat'),
+      );
+      request.headers['Content-Type'] = 'application/json';
+      request.body = jsonEncode({
+        'model': _model,
+        'messages': messages,
+        'stream': true,
+        'options': {'temperature': 0.2},
+      });
+
+      final response = await http.Client().send(request).timeout(
+        const Duration(seconds: 120),
+      );
+
+      if (response.statusCode != 200) {
+        yield '[Error: Ollama returned status ${response.statusCode}]';
+        return;
+      }
+
+      await for (final chunk in response.stream.transform(utf8.decoder)) {
+        for (final line in chunk.split('\n')) {
+          if (line.trim().isEmpty) continue;
+          try {
+            final json = jsonDecode(line) as Map<String, dynamic>;
+            final message = json['message'] as Map<String, dynamic>?;
+            final content = message?['content'] as String? ?? '';
+            if (content.isNotEmpty) {
+              yield content;
+            }
+          } catch (_) {
+            // Skip malformed JSON lines
+          }
+        }
+      }
+    } catch (e) {
+      yield '[Error: $e]';
+    }
+  }
 }
 
 enum OllamaConnectionStatus {
