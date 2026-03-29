@@ -49,6 +49,7 @@ dependencies:
   syncfusion_flutter_pdf: ^33.1.44
   url_launcher: ^6.2.5
   crypto: ^3.0.3
+  mcp_dart: ^2.1.0
 
 dev_dependencies:
   flutter_test:

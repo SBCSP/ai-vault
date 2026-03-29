@@ -1,4 +1,4 @@
-name: Build & Release macOS DMG
+name: Build & Release macOS DMG + aiv_agent RPM
 
 on:
   push:
@@ -8,10 +8,92 @@ on:
   workflow_dispatch:  # Allow manual trigger from GitHub UI
 
 jobs:
+  # ─── Job 1: Build aiv_agent Linux binary + RPM ───
+  build-agent-rpm:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Extract version
+        id: version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          else
+            VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | sed 's/+.*//')
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+
+      - name: Build aiv_agent Linux binary
+        working-directory: aiv_agent
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          GOOS=linux GOARCH=amd64 go build -trimpath \
+            -ldflags "-s -w -X main.Version=${VERSION}" \
+            -o build/aiv_agent-linux-amd64 ./cmd/aiv_agent
+
+      - name: Install rpmbuild
+        run: sudo apt-get update && sudo apt-get install -y rpm
+
+      - name: Build RPM
+        working-directory: aiv_agent
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          RPM_DIR="$(pwd)/build/rpm"
+
+          mkdir -p "$RPM_DIR"/{SOURCES,SPECS,BUILD,RPMS,SRPMS}
+
+          # Copy binary and service file
+          cp build/aiv_agent-linux-amd64 "$RPM_DIR/SOURCES/aiv_agent"
+          cp packaging/systemd/aiv_agent.service "$RPM_DIR/SOURCES/aiv_agent.service"
+
+          # Create placeholder certs (user will replace with real ones from AI VaultIO)
+          mkdir -p "$RPM_DIR/SOURCES"
+          touch "$RPM_DIR/SOURCES/ca.crt"
+          touch "$RPM_DIR/SOURCES/server.crt"
+          touch "$RPM_DIR/SOURCES/server.key"
+
+          # Copy spec
+          cp packaging/rpm/aiv_agent.spec "$RPM_DIR/SPECS/"
+
+          # Build RPM
+          rpmbuild --define "_topdir $RPM_DIR" \
+            --define "_version $VERSION" \
+            --define "_sourcedir $RPM_DIR/SOURCES" \
+            -bb "$RPM_DIR/SPECS/aiv_agent.spec"
+
+          # Copy RPM to a predictable location
+          find "$RPM_DIR/RPMS" -name '*.rpm' -exec cp {} build/ \;
+          echo "RPM files:"
+          ls -la build/*.rpm
+
+      - name: Upload aiv_agent RPM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: aiv-agent-rpm
+          path: aiv_agent/build/*.rpm
+
+      - name: Upload aiv_agent binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: aiv-agent-binary
+          path: aiv_agent/build/aiv_agent-linux-amd64
+
+  # ─── Job 2: Build macOS DMG ───
   build-macos:
     runs-on: macos-latest
     permissions:
-      contents: write  # Needed to create releases
+      contents: read
 
     steps:
       - name: Checkout code
@@ -34,8 +116,6 @@ jobs:
       - name: Extract version
         id: version
         run: |
-          # Use git tag as version source (strips leading 'v')
-          # Falls back to pubspec.yaml for manual workflow_dispatch runs
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             VERSION="${GITHUB_REF#refs/tags/v}"
           else
@@ -98,15 +178,50 @@ jobs:
           name: AI-VaultIO-macOS
           path: build/dmg/*.dmg
 
+  # ─── Job 3: Create GitHub Release with all artifacts ───
+  release:
+    needs: [build-macos, build-agent-rpm]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+
+    steps:
+      - name: Extract version
+        id: version
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Download macOS DMG artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: AI-VaultIO-macOS
+          path: release-assets/
+
+      - name: Download aiv_agent RPM artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: aiv-agent-rpm
+          path: release-assets/
+
+      - name: Download aiv_agent binary artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: aiv-agent-binary
+          path: release-assets/
+
+      - name: List release assets
+        run: ls -la release-assets/
+
       - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           name: AI VaultIO ${{ steps.version.outputs.version }}
           body: |
             ## AI VaultIO ${{ steps.version.outputs.version }}
 
-            ### Installation
+            ### macOS App Installation
             1. Download `AI-VaultIO-macOS-v${{ steps.version.outputs.version }}.dmg` below
             2. Open the `.dmg` file
             3. Drag **AI VaultIO** to your **Applications** folder
@@ -115,12 +230,34 @@ jobs:
                - Scroll down to find _"AI VaultIO" was blocked_ and click **Open Anyway**
                - Or run in Terminal: `xattr -cr /Applications/AI\ VaultIO.app`
 
+            ### aiv_agent (Remote Server Monitoring)
+            Install the agent on your Linux servers to monitor them from AI VaultIO.
+
+            **RPM (RHEL/CentOS/Fedora/Amazon Linux):**
+            ```bash
+            sudo rpm -i aiv_agent-${{ steps.version.outputs.version }}-1.x86_64.rpm
+            ```
+
+            **Standalone binary:**
+            ```bash
+            sudo cp aiv_agent-linux-amd64 /usr/local/bin/aiv_agent
+            sudo chmod +x /usr/local/bin/aiv_agent
+            ```
+
+            **After installing:**
+            1. Open AI VaultIO → Settings → Server Management
+            2. Click **Generate Certificates**
+            3. Copy the server certificates (`ca.crt`, `server.crt`, `server.key`) to `/etc/aiv_agent/` on your server
+            4. Start/restart the agent: `sudo systemctl restart aiv_agent`
+            5. Add the server in AI VaultIO and view live metrics
+
             ### Prerequisites
             - macOS 12+ (Monterey or later)
             - [Ollama](https://ollama.com) installed for AI chat features
+            - Linux server with systemd for aiv_agent
 
             ---
             _Built with Flutter & Ollama — 100% local, 100% private._
-          files: build/dmg/*.dmg
+          files: release-assets/*
           draft: false
           prerelease: false

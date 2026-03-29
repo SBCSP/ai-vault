@@ -99,4 +99,13 @@ abstract class AuditAction {
   // Secrets Lock
   static const String secretsLocked = 'secrets.locked';
   static const String secretsUnlocked = 'secrets.unlocked';
+
+  // MCP
+  static const String mcpServerAdded = 'mcp.server_added';
+  static const String mcpServerRemoved = 'mcp.server_removed';
+  static const String mcpConnected = 'mcp.connected';
+  static const String mcpDisconnected = 'mcp.disconnected';
+  static const String mcpConnectionFailed = 'mcp.connection_failed';
+  static const String mcpToolCalled = 'mcp.tool_called';
+  static const String mcpToolFailed = 'mcp.tool_failed';
 }

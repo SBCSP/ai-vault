@@ -3793,6 +3793,1012 @@ class AuditLogsCompanion extends UpdateCompanion<AuditLog> {
   }
 }
 
+class $McpServersTable extends McpServers
+    with TableInfo<$McpServersTable, McpServer> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $McpServersTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _nameMeta = const VerificationMeta('name');
+  @override
+  late final GeneratedColumn<String> name = GeneratedColumn<String>(
+    'name',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _urlMeta = const VerificationMeta('url');
+  @override
+  late final GeneratedColumn<String> url = GeneratedColumn<String>(
+    'url',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _authTokenMeta = const VerificationMeta(
+    'authToken',
+  );
+  @override
+  late final GeneratedColumn<String> authToken = GeneratedColumn<String>(
+    'auth_token',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _enabledMeta = const VerificationMeta(
+    'enabled',
+  );
+  @override
+  late final GeneratedColumn<bool> enabled = GeneratedColumn<bool>(
+    'enabled',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("enabled" IN (0, 1))',
+    ),
+    defaultValue: const Constant(true),
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    name,
+    url,
+    authToken,
+    enabled,
+    createdAt,
+    updatedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'mcp_servers';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<McpServer> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('name')) {
+      context.handle(
+        _nameMeta,
+        name.isAcceptableOrUnknown(data['name']!, _nameMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_nameMeta);
+    }
+    if (data.containsKey('url')) {
+      context.handle(
+        _urlMeta,
+        url.isAcceptableOrUnknown(data['url']!, _urlMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_urlMeta);
+    }
+    if (data.containsKey('auth_token')) {
+      context.handle(
+        _authTokenMeta,
+        authToken.isAcceptableOrUnknown(data['auth_token']!, _authTokenMeta),
+      );
+    }
+    if (data.containsKey('enabled')) {
+      context.handle(
+        _enabledMeta,
+        enabled.isAcceptableOrUnknown(data['enabled']!, _enabledMeta),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  McpServer map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return McpServer(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      name: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}name'],
+      )!,
+      url: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}url'],
+      )!,
+      authToken: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}auth_token'],
+      )!,
+      enabled: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}enabled'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}updated_at'],
+      )!,
+    );
+  }
+
+  @override
+  $McpServersTable createAlias(String alias) {
+    return $McpServersTable(attachedDatabase, alias);
+  }
+}
+
+class McpServer extends DataClass implements Insertable<McpServer> {
+  final String id;
+  final String name;
+  final String url;
+  final String authToken;
+  final bool enabled;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  const McpServer({
+    required this.id,
+    required this.name,
+    required this.url,
+    required this.authToken,
+    required this.enabled,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['name'] = Variable<String>(name);
+    map['url'] = Variable<String>(url);
+    map['auth_token'] = Variable<String>(authToken);
+    map['enabled'] = Variable<bool>(enabled);
+    map['created_at'] = Variable<DateTime>(createdAt);
+    map['updated_at'] = Variable<DateTime>(updatedAt);
+    return map;
+  }
+
+  McpServersCompanion toCompanion(bool nullToAbsent) {
+    return McpServersCompanion(
+      id: Value(id),
+      name: Value(name),
+      url: Value(url),
+      authToken: Value(authToken),
+      enabled: Value(enabled),
+      createdAt: Value(createdAt),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory McpServer.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return McpServer(
+      id: serializer.fromJson<String>(json['id']),
+      name: serializer.fromJson<String>(json['name']),
+      url: serializer.fromJson<String>(json['url']),
+      authToken: serializer.fromJson<String>(json['authToken']),
+      enabled: serializer.fromJson<bool>(json['enabled']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'name': serializer.toJson<String>(name),
+      'url': serializer.toJson<String>(url),
+      'authToken': serializer.toJson<String>(authToken),
+      'enabled': serializer.toJson<bool>(enabled),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
+    };
+  }
+
+  McpServer copyWith({
+    String? id,
+    String? name,
+    String? url,
+    String? authToken,
+    bool? enabled,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) => McpServer(
+    id: id ?? this.id,
+    name: name ?? this.name,
+    url: url ?? this.url,
+    authToken: authToken ?? this.authToken,
+    enabled: enabled ?? this.enabled,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+  McpServer copyWithCompanion(McpServersCompanion data) {
+    return McpServer(
+      id: data.id.present ? data.id.value : this.id,
+      name: data.name.present ? data.name.value : this.name,
+      url: data.url.present ? data.url.value : this.url,
+      authToken: data.authToken.present ? data.authToken.value : this.authToken,
+      enabled: data.enabled.present ? data.enabled.value : this.enabled,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('McpServer(')
+          ..write('id: $id, ')
+          ..write('name: $name, ')
+          ..write('url: $url, ')
+          ..write('authToken: $authToken, ')
+          ..write('enabled: $enabled, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(id, name, url, authToken, enabled, createdAt, updatedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is McpServer &&
+          other.id == this.id &&
+          other.name == this.name &&
+          other.url == this.url &&
+          other.authToken == this.authToken &&
+          other.enabled == this.enabled &&
+          other.createdAt == this.createdAt &&
+          other.updatedAt == this.updatedAt);
+}
+
+class McpServersCompanion extends UpdateCompanion<McpServer> {
+  final Value<String> id;
+  final Value<String> name;
+  final Value<String> url;
+  final Value<String> authToken;
+  final Value<bool> enabled;
+  final Value<DateTime> createdAt;
+  final Value<DateTime> updatedAt;
+  final Value<int> rowid;
+  const McpServersCompanion({
+    this.id = const Value.absent(),
+    this.name = const Value.absent(),
+    this.url = const Value.absent(),
+    this.authToken = const Value.absent(),
+    this.enabled = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  McpServersCompanion.insert({
+    required String id,
+    required String name,
+    required String url,
+    this.authToken = const Value.absent(),
+    this.enabled = const Value.absent(),
+    required DateTime createdAt,
+    required DateTime updatedAt,
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       name = Value(name),
+       url = Value(url),
+       createdAt = Value(createdAt),
+       updatedAt = Value(updatedAt);
+  static Insertable<McpServer> custom({
+    Expression<String>? id,
+    Expression<String>? name,
+    Expression<String>? url,
+    Expression<String>? authToken,
+    Expression<bool>? enabled,
+    Expression<DateTime>? createdAt,
+    Expression<DateTime>? updatedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (name != null) 'name': name,
+      if (url != null) 'url': url,
+      if (authToken != null) 'auth_token': authToken,
+      if (enabled != null) 'enabled': enabled,
+      if (createdAt != null) 'created_at': createdAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  McpServersCompanion copyWith({
+    Value<String>? id,
+    Value<String>? name,
+    Value<String>? url,
+    Value<String>? authToken,
+    Value<bool>? enabled,
+    Value<DateTime>? createdAt,
+    Value<DateTime>? updatedAt,
+    Value<int>? rowid,
+  }) {
+    return McpServersCompanion(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      url: url ?? this.url,
+      authToken: authToken ?? this.authToken,
+      enabled: enabled ?? this.enabled,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (name.present) {
+      map['name'] = Variable<String>(name.value);
+    }
+    if (url.present) {
+      map['url'] = Variable<String>(url.value);
+    }
+    if (authToken.present) {
+      map['auth_token'] = Variable<String>(authToken.value);
+    }
+    if (enabled.present) {
+      map['enabled'] = Variable<bool>(enabled.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(updatedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('McpServersCompanion(')
+          ..write('id: $id, ')
+          ..write('name: $name, ')
+          ..write('url: $url, ')
+          ..write('authToken: $authToken, ')
+          ..write('enabled: $enabled, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $ServersTable extends Servers with TableInfo<$ServersTable, Server> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $ServersTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _nameMeta = const VerificationMeta('name');
+  @override
+  late final GeneratedColumn<String> name = GeneratedColumn<String>(
+    'name',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _hostMeta = const VerificationMeta('host');
+  @override
+  late final GeneratedColumn<String> host = GeneratedColumn<String>(
+    'host',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _portMeta = const VerificationMeta('port');
+  @override
+  late final GeneratedColumn<int> port = GeneratedColumn<int>(
+    'port',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(9090),
+  );
+  static const VerificationMeta _enabledMeta = const VerificationMeta(
+    'enabled',
+  );
+  @override
+  late final GeneratedColumn<bool> enabled = GeneratedColumn<bool>(
+    'enabled',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("enabled" IN (0, 1))',
+    ),
+    defaultValue: const Constant(true),
+  );
+  static const VerificationMeta _statusMeta = const VerificationMeta('status');
+  @override
+  late final GeneratedColumn<String> status = GeneratedColumn<String>(
+    'status',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('unknown'),
+  );
+  static const VerificationMeta _lastSeenAtMeta = const VerificationMeta(
+    'lastSeenAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> lastSeenAt = GeneratedColumn<DateTime>(
+    'last_seen_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    name,
+    host,
+    port,
+    enabled,
+    status,
+    lastSeenAt,
+    createdAt,
+    updatedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'servers';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<Server> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('name')) {
+      context.handle(
+        _nameMeta,
+        name.isAcceptableOrUnknown(data['name']!, _nameMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_nameMeta);
+    }
+    if (data.containsKey('host')) {
+      context.handle(
+        _hostMeta,
+        host.isAcceptableOrUnknown(data['host']!, _hostMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_hostMeta);
+    }
+    if (data.containsKey('port')) {
+      context.handle(
+        _portMeta,
+        port.isAcceptableOrUnknown(data['port']!, _portMeta),
+      );
+    }
+    if (data.containsKey('enabled')) {
+      context.handle(
+        _enabledMeta,
+        enabled.isAcceptableOrUnknown(data['enabled']!, _enabledMeta),
+      );
+    }
+    if (data.containsKey('status')) {
+      context.handle(
+        _statusMeta,
+        status.isAcceptableOrUnknown(data['status']!, _statusMeta),
+      );
+    }
+    if (data.containsKey('last_seen_at')) {
+      context.handle(
+        _lastSeenAtMeta,
+        lastSeenAt.isAcceptableOrUnknown(
+          data['last_seen_at']!,
+          _lastSeenAtMeta,
+        ),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  Server map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return Server(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      name: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}name'],
+      )!,
+      host: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}host'],
+      )!,
+      port: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}port'],
+      )!,
+      enabled: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}enabled'],
+      )!,
+      status: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}status'],
+      )!,
+      lastSeenAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}last_seen_at'],
+      ),
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}updated_at'],
+      )!,
+    );
+  }
+
+  @override
+  $ServersTable createAlias(String alias) {
+    return $ServersTable(attachedDatabase, alias);
+  }
+}
+
+class Server extends DataClass implements Insertable<Server> {
+  final String id;
+  final String name;
+  final String host;
+  final int port;
+  final bool enabled;
+  final String status;
+  final DateTime? lastSeenAt;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  const Server({
+    required this.id,
+    required this.name,
+    required this.host,
+    required this.port,
+    required this.enabled,
+    required this.status,
+    this.lastSeenAt,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['name'] = Variable<String>(name);
+    map['host'] = Variable<String>(host);
+    map['port'] = Variable<int>(port);
+    map['enabled'] = Variable<bool>(enabled);
+    map['status'] = Variable<String>(status);
+    if (!nullToAbsent || lastSeenAt != null) {
+      map['last_seen_at'] = Variable<DateTime>(lastSeenAt);
+    }
+    map['created_at'] = Variable<DateTime>(createdAt);
+    map['updated_at'] = Variable<DateTime>(updatedAt);
+    return map;
+  }
+
+  ServersCompanion toCompanion(bool nullToAbsent) {
+    return ServersCompanion(
+      id: Value(id),
+      name: Value(name),
+      host: Value(host),
+      port: Value(port),
+      enabled: Value(enabled),
+      status: Value(status),
+      lastSeenAt: lastSeenAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lastSeenAt),
+      createdAt: Value(createdAt),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory Server.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return Server(
+      id: serializer.fromJson<String>(json['id']),
+      name: serializer.fromJson<String>(json['name']),
+      host: serializer.fromJson<String>(json['host']),
+      port: serializer.fromJson<int>(json['port']),
+      enabled: serializer.fromJson<bool>(json['enabled']),
+      status: serializer.fromJson<String>(json['status']),
+      lastSeenAt: serializer.fromJson<DateTime?>(json['lastSeenAt']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'name': serializer.toJson<String>(name),
+      'host': serializer.toJson<String>(host),
+      'port': serializer.toJson<int>(port),
+      'enabled': serializer.toJson<bool>(enabled),
+      'status': serializer.toJson<String>(status),
+      'lastSeenAt': serializer.toJson<DateTime?>(lastSeenAt),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
+    };
+  }
+
+  Server copyWith({
+    String? id,
+    String? name,
+    String? host,
+    int? port,
+    bool? enabled,
+    String? status,
+    Value<DateTime?> lastSeenAt = const Value.absent(),
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) => Server(
+    id: id ?? this.id,
+    name: name ?? this.name,
+    host: host ?? this.host,
+    port: port ?? this.port,
+    enabled: enabled ?? this.enabled,
+    status: status ?? this.status,
+    lastSeenAt: lastSeenAt.present ? lastSeenAt.value : this.lastSeenAt,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+  Server copyWithCompanion(ServersCompanion data) {
+    return Server(
+      id: data.id.present ? data.id.value : this.id,
+      name: data.name.present ? data.name.value : this.name,
+      host: data.host.present ? data.host.value : this.host,
+      port: data.port.present ? data.port.value : this.port,
+      enabled: data.enabled.present ? data.enabled.value : this.enabled,
+      status: data.status.present ? data.status.value : this.status,
+      lastSeenAt: data.lastSeenAt.present
+          ? data.lastSeenAt.value
+          : this.lastSeenAt,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('Server(')
+          ..write('id: $id, ')
+          ..write('name: $name, ')
+          ..write('host: $host, ')
+          ..write('port: $port, ')
+          ..write('enabled: $enabled, ')
+          ..write('status: $status, ')
+          ..write('lastSeenAt: $lastSeenAt, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    name,
+    host,
+    port,
+    enabled,
+    status,
+    lastSeenAt,
+    createdAt,
+    updatedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is Server &&
+          other.id == this.id &&
+          other.name == this.name &&
+          other.host == this.host &&
+          other.port == this.port &&
+          other.enabled == this.enabled &&
+          other.status == this.status &&
+          other.lastSeenAt == this.lastSeenAt &&
+          other.createdAt == this.createdAt &&
+          other.updatedAt == this.updatedAt);
+}
+
+class ServersCompanion extends UpdateCompanion<Server> {
+  final Value<String> id;
+  final Value<String> name;
+  final Value<String> host;
+  final Value<int> port;
+  final Value<bool> enabled;
+  final Value<String> status;
+  final Value<DateTime?> lastSeenAt;
+  final Value<DateTime> createdAt;
+  final Value<DateTime> updatedAt;
+  final Value<int> rowid;
+  const ServersCompanion({
+    this.id = const Value.absent(),
+    this.name = const Value.absent(),
+    this.host = const Value.absent(),
+    this.port = const Value.absent(),
+    this.enabled = const Value.absent(),
+    this.status = const Value.absent(),
+    this.lastSeenAt = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  ServersCompanion.insert({
+    required String id,
+    required String name,
+    required String host,
+    this.port = const Value.absent(),
+    this.enabled = const Value.absent(),
+    this.status = const Value.absent(),
+    this.lastSeenAt = const Value.absent(),
+    required DateTime createdAt,
+    required DateTime updatedAt,
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       name = Value(name),
+       host = Value(host),
+       createdAt = Value(createdAt),
+       updatedAt = Value(updatedAt);
+  static Insertable<Server> custom({
+    Expression<String>? id,
+    Expression<String>? name,
+    Expression<String>? host,
+    Expression<int>? port,
+    Expression<bool>? enabled,
+    Expression<String>? status,
+    Expression<DateTime>? lastSeenAt,
+    Expression<DateTime>? createdAt,
+    Expression<DateTime>? updatedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (name != null) 'name': name,
+      if (host != null) 'host': host,
+      if (port != null) 'port': port,
+      if (enabled != null) 'enabled': enabled,
+      if (status != null) 'status': status,
+      if (lastSeenAt != null) 'last_seen_at': lastSeenAt,
+      if (createdAt != null) 'created_at': createdAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  ServersCompanion copyWith({
+    Value<String>? id,
+    Value<String>? name,
+    Value<String>? host,
+    Value<int>? port,
+    Value<bool>? enabled,
+    Value<String>? status,
+    Value<DateTime?>? lastSeenAt,
+    Value<DateTime>? createdAt,
+    Value<DateTime>? updatedAt,
+    Value<int>? rowid,
+  }) {
+    return ServersCompanion(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      host: host ?? this.host,
+      port: port ?? this.port,
+      enabled: enabled ?? this.enabled,
+      status: status ?? this.status,
+      lastSeenAt: lastSeenAt ?? this.lastSeenAt,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (name.present) {
+      map['name'] = Variable<String>(name.value);
+    }
+    if (host.present) {
+      map['host'] = Variable<String>(host.value);
+    }
+    if (port.present) {
+      map['port'] = Variable<int>(port.value);
+    }
+    if (enabled.present) {
+      map['enabled'] = Variable<bool>(enabled.value);
+    }
+    if (status.present) {
+      map['status'] = Variable<String>(status.value);
+    }
+    if (lastSeenAt.present) {
+      map['last_seen_at'] = Variable<DateTime>(lastSeenAt.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(updatedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ServersCompanion(')
+          ..write('id: $id, ')
+          ..write('name: $name, ')
+          ..write('host: $host, ')
+          ..write('port: $port, ')
+          ..write('enabled: $enabled, ')
+          ..write('status: $status, ')
+          ..write('lastSeenAt: $lastSeenAt, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -3804,6 +4810,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $ChatSessionsTable chatSessions = $ChatSessionsTable(this);
   late final $IdeasTable ideas = $IdeasTable(this);
   late final $AuditLogsTable auditLogs = $AuditLogsTable(this);
+  late final $McpServersTable mcpServers = $McpServersTable(this);
+  late final $ServersTable servers = $ServersTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -3817,6 +4825,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     chatSessions,
     ideas,
     auditLogs,
+    mcpServers,
+    servers,
   ];
 }
 
@@ -5768,6 +6778,513 @@ typedef $$AuditLogsTableProcessedTableManager =
       AuditLog,
       PrefetchHooks Function()
     >;
+typedef $$McpServersTableCreateCompanionBuilder =
+    McpServersCompanion Function({
+      required String id,
+      required String name,
+      required String url,
+      Value<String> authToken,
+      Value<bool> enabled,
+      required DateTime createdAt,
+      required DateTime updatedAt,
+      Value<int> rowid,
+    });
+typedef $$McpServersTableUpdateCompanionBuilder =
+    McpServersCompanion Function({
+      Value<String> id,
+      Value<String> name,
+      Value<String> url,
+      Value<String> authToken,
+      Value<bool> enabled,
+      Value<DateTime> createdAt,
+      Value<DateTime> updatedAt,
+      Value<int> rowid,
+    });
+
+class $$McpServersTableFilterComposer
+    extends Composer<_$AppDatabase, $McpServersTable> {
+  $$McpServersTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get url => $composableBuilder(
+    column: $table.url,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get authToken => $composableBuilder(
+    column: $table.authToken,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get enabled => $composableBuilder(
+    column: $table.enabled,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$McpServersTableOrderingComposer
+    extends Composer<_$AppDatabase, $McpServersTable> {
+  $$McpServersTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get url => $composableBuilder(
+    column: $table.url,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get authToken => $composableBuilder(
+    column: $table.authToken,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get enabled => $composableBuilder(
+    column: $table.enabled,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$McpServersTableAnnotationComposer
+    extends Composer<_$AppDatabase, $McpServersTable> {
+  $$McpServersTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<String> get url =>
+      $composableBuilder(column: $table.url, builder: (column) => column);
+
+  GeneratedColumn<String> get authToken =>
+      $composableBuilder(column: $table.authToken, builder: (column) => column);
+
+  GeneratedColumn<bool> get enabled =>
+      $composableBuilder(column: $table.enabled, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$McpServersTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $McpServersTable,
+          McpServer,
+          $$McpServersTableFilterComposer,
+          $$McpServersTableOrderingComposer,
+          $$McpServersTableAnnotationComposer,
+          $$McpServersTableCreateCompanionBuilder,
+          $$McpServersTableUpdateCompanionBuilder,
+          (
+            McpServer,
+            BaseReferences<_$AppDatabase, $McpServersTable, McpServer>,
+          ),
+          McpServer,
+          PrefetchHooks Function()
+        > {
+  $$McpServersTableTableManager(_$AppDatabase db, $McpServersTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$McpServersTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$McpServersTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$McpServersTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> name = const Value.absent(),
+                Value<String> url = const Value.absent(),
+                Value<String> authToken = const Value.absent(),
+                Value<bool> enabled = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => McpServersCompanion(
+                id: id,
+                name: name,
+                url: url,
+                authToken: authToken,
+                enabled: enabled,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String name,
+                required String url,
+                Value<String> authToken = const Value.absent(),
+                Value<bool> enabled = const Value.absent(),
+                required DateTime createdAt,
+                required DateTime updatedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => McpServersCompanion.insert(
+                id: id,
+                name: name,
+                url: url,
+                authToken: authToken,
+                enabled: enabled,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$McpServersTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $McpServersTable,
+      McpServer,
+      $$McpServersTableFilterComposer,
+      $$McpServersTableOrderingComposer,
+      $$McpServersTableAnnotationComposer,
+      $$McpServersTableCreateCompanionBuilder,
+      $$McpServersTableUpdateCompanionBuilder,
+      (McpServer, BaseReferences<_$AppDatabase, $McpServersTable, McpServer>),
+      McpServer,
+      PrefetchHooks Function()
+    >;
+typedef $$ServersTableCreateCompanionBuilder =
+    ServersCompanion Function({
+      required String id,
+      required String name,
+      required String host,
+      Value<int> port,
+      Value<bool> enabled,
+      Value<String> status,
+      Value<DateTime?> lastSeenAt,
+      required DateTime createdAt,
+      required DateTime updatedAt,
+      Value<int> rowid,
+    });
+typedef $$ServersTableUpdateCompanionBuilder =
+    ServersCompanion Function({
+      Value<String> id,
+      Value<String> name,
+      Value<String> host,
+      Value<int> port,
+      Value<bool> enabled,
+      Value<String> status,
+      Value<DateTime?> lastSeenAt,
+      Value<DateTime> createdAt,
+      Value<DateTime> updatedAt,
+      Value<int> rowid,
+    });
+
+class $$ServersTableFilterComposer
+    extends Composer<_$AppDatabase, $ServersTable> {
+  $$ServersTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get host => $composableBuilder(
+    column: $table.host,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get port => $composableBuilder(
+    column: $table.port,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get enabled => $composableBuilder(
+    column: $table.enabled,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get status => $composableBuilder(
+    column: $table.status,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get lastSeenAt => $composableBuilder(
+    column: $table.lastSeenAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$ServersTableOrderingComposer
+    extends Composer<_$AppDatabase, $ServersTable> {
+  $$ServersTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get host => $composableBuilder(
+    column: $table.host,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get port => $composableBuilder(
+    column: $table.port,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get enabled => $composableBuilder(
+    column: $table.enabled,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get status => $composableBuilder(
+    column: $table.status,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get lastSeenAt => $composableBuilder(
+    column: $table.lastSeenAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$ServersTableAnnotationComposer
+    extends Composer<_$AppDatabase, $ServersTable> {
+  $$ServersTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<String> get host =>
+      $composableBuilder(column: $table.host, builder: (column) => column);
+
+  GeneratedColumn<int> get port =>
+      $composableBuilder(column: $table.port, builder: (column) => column);
+
+  GeneratedColumn<bool> get enabled =>
+      $composableBuilder(column: $table.enabled, builder: (column) => column);
+
+  GeneratedColumn<String> get status =>
+      $composableBuilder(column: $table.status, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get lastSeenAt => $composableBuilder(
+    column: $table.lastSeenAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$ServersTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $ServersTable,
+          Server,
+          $$ServersTableFilterComposer,
+          $$ServersTableOrderingComposer,
+          $$ServersTableAnnotationComposer,
+          $$ServersTableCreateCompanionBuilder,
+          $$ServersTableUpdateCompanionBuilder,
+          (Server, BaseReferences<_$AppDatabase, $ServersTable, Server>),
+          Server,
+          PrefetchHooks Function()
+        > {
+  $$ServersTableTableManager(_$AppDatabase db, $ServersTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$ServersTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$ServersTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$ServersTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> name = const Value.absent(),
+                Value<String> host = const Value.absent(),
+                Value<int> port = const Value.absent(),
+                Value<bool> enabled = const Value.absent(),
+                Value<String> status = const Value.absent(),
+                Value<DateTime?> lastSeenAt = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => ServersCompanion(
+                id: id,
+                name: name,
+                host: host,
+                port: port,
+                enabled: enabled,
+                status: status,
+                lastSeenAt: lastSeenAt,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String name,
+                required String host,
+                Value<int> port = const Value.absent(),
+                Value<bool> enabled = const Value.absent(),
+                Value<String> status = const Value.absent(),
+                Value<DateTime?> lastSeenAt = const Value.absent(),
+                required DateTime createdAt,
+                required DateTime updatedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => ServersCompanion.insert(
+                id: id,
+                name: name,
+                host: host,
+                port: port,
+                enabled: enabled,
+                status: status,
+                lastSeenAt: lastSeenAt,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$ServersTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $ServersTable,
+      Server,
+      $$ServersTableFilterComposer,
+      $$ServersTableOrderingComposer,
+      $$ServersTableAnnotationComposer,
+      $$ServersTableCreateCompanionBuilder,
+      $$ServersTableUpdateCompanionBuilder,
+      (Server, BaseReferences<_$AppDatabase, $ServersTable, Server>),
+      Server,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -5788,4 +7305,8 @@ class $AppDatabaseManager {
       $$IdeasTableTableManager(_db, _db.ideas);
   $$AuditLogsTableTableManager get auditLogs =>
       $$AuditLogsTableTableManager(_db, _db.auditLogs);
+  $$McpServersTableTableManager get mcpServers =>
+      $$McpServersTableTableManager(_db, _db.mcpServers);
+  $$ServersTableTableManager get servers =>
+      $$ServersTableTableManager(_db, _db.servers);
 }

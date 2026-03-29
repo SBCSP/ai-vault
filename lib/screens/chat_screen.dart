@@ -9,6 +9,8 @@ import '../providers/chat_history_provider.dart';
 import '../providers/embedding_provider.dart';
 import '../providers/secrets_lock_provider.dart';
 import '../services/ai_service.dart';
+import '../services/mcp_service.dart';
+import '../providers/mcp_provider.dart';
 import '../widgets/markdown_response.dart';
 import 'chat_history_screen.dart';
 
@@ -281,6 +283,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             ),
             const SizedBox(width: 6),
             _SecretsLockBadge(),
+            const SizedBox(width: 6),
+            _McpStatusBadge(),
           ],
         ),
         actions: [
@@ -370,7 +374,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   ),
                   const SizedBox(width: 10),
                   Text(
-                    'Thinking...',
+                    chatState.processingStatus ?? 'Thinking...',
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
@@ -537,6 +541,8 @@ class _FocusChatBubble extends StatelessWidget {
                     _AiStatusBadge(aiOnline: message.aiOnline),
                     if (message.ragUsed)
                       _RagSourceBadge(sources: message.ragSources),
+                    if (message.mcpUsed && message.toolCalls.isNotEmpty)
+                      _McpToolBadge(toolCalls: message.toolCalls),
                   ],
                 ),
               ],
@@ -656,6 +662,130 @@ class _RagSourceBadge extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _McpToolBadge extends StatefulWidget {
+  final List<ToolCallInfo> toolCalls;
+
+  const _McpToolBadge({required this.toolCalls});
+
+  @override
+  State<_McpToolBadge> createState() => _McpToolBadgeState();
+}
+
+class _McpToolBadgeState extends State<_McpToolBadge> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final count = widget.toolCalls.length;
+    final hasErrors = widget.toolCalls.any((tc) => tc.isError);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        GestureDetector(
+          onTap: () => setState(() => _expanded = !_expanded),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: hasErrors
+                  ? Colors.orange.withValues(alpha: 0.15)
+                  : Colors.deepPurple.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.build,
+                  size: 10,
+                  color: hasErrors ? Colors.orange.shade700 : Colors.deepPurple,
+                ),
+                const SizedBox(width: 3),
+                Text(
+                  'MCP: $count tool call${count == 1 ? '' : 's'}',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: hasErrors ? Colors.orange.shade700 : Colors.deepPurple,
+                    fontWeight: FontWeight.w500,
+                    fontSize: 10,
+                  ),
+                ),
+                const SizedBox(width: 2),
+                Icon(
+                  _expanded ? Icons.expand_less : Icons.expand_more,
+                  size: 12,
+                  color: hasErrors ? Colors.orange.shade700 : Colors.deepPurple,
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (_expanded) ...[
+          const SizedBox(height: 4),
+          ...widget.toolCalls.map((tc) => Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surfaceContainerHighest
+                        .withValues(alpha: 0.5),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            tc.isError ? Icons.error : Icons.check_circle,
+                            size: 12,
+                            color: tc.isError ? Colors.red : Colors.green,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            tc.toolName,
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          if (tc.duration != null) ...[
+                            const Spacer(),
+                            Text(
+                              '${tc.duration!.inMilliseconds}ms',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                                fontSize: 9,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      if (tc.isError)
+                        Text(
+                          tc.error!,
+                          style: TextStyle(fontSize: 10, color: Colors.red),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      if (tc.result != null)
+                        Text(
+                          tc.result!.length > 200
+                              ? '${tc.result!.substring(0, 200)}...'
+                              : tc.result!,
+                          style: theme.textTheme.bodySmall?.copyWith(fontSize: 10),
+                          maxLines: 4,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                    ],
+                  ),
+                ),
+              )),
+        ],
+      ],
     );
   }
 }
@@ -977,6 +1107,53 @@ class _SecretsLockBadge extends ConsumerWidget {
               locked ? 'Secrets Locked' : 'Secrets Open',
               style: theme.textTheme.labelSmall?.copyWith(
                 color: locked ? Colors.red : Colors.green.shade700,
+                fontWeight: FontWeight.w600,
+                fontSize: 10,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _McpStatusBadge extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final mcpState = ref.watch(mcpProvider);
+    final toolCount = mcpState.toolCount;
+    final theme = Theme.of(context);
+
+    if (mcpState.servers.isEmpty) return const SizedBox.shrink();
+
+    final hasTools = toolCount > 0;
+
+    return Tooltip(
+      message: hasTools
+          ? 'MCP: $toolCount tool${toolCount == 1 ? '' : 's'} from ${mcpState.connectedCount} server${mcpState.connectedCount == 1 ? '' : 's'}'
+          : 'MCP servers configured but no tools available',
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color: hasTools
+              ? Colors.deepPurple.withValues(alpha: 0.12)
+              : Colors.grey.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.extension,
+              size: 12,
+              color: hasTools ? Colors.deepPurple : Colors.grey,
+            ),
+            const SizedBox(width: 3),
+            Text(
+              hasTools ? 'MCP: $toolCount' : 'MCP',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: hasTools ? Colors.deepPurple : Colors.grey,
                 fontWeight: FontWeight.w600,
                 fontSize: 10,
               ),
