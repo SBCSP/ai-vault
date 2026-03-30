@@ -18,7 +18,8 @@ import 'server_management_screen.dart';
 import 'wiki_screen.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
-  const SettingsScreen({super.key});
+  final bool embedded;
+  const SettingsScreen({super.key, this.embedded = false});
 
   @override
   ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
@@ -31,18 +32,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final currentModel = ref.watch(aiServiceProvider).model;
     final llmProvider = ref.watch(llmProviderTypeProvider);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Settings'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.lock),
-            tooltip: 'Lock vault',
-            onPressed: () => ref.read(authStateProvider.notifier).lock(),
-          ),
-        ],
-      ),
-      body: SingleChildScrollView(
+    final body = SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Center(
           child: ConstrainedBox(
@@ -337,7 +327,24 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
           ),
         ),
+      );
+
+    if (widget.embedded) {
+      return body;
+    }
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Settings'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.lock),
+            tooltip: 'Lock vault',
+            onPressed: () => ref.read(authStateProvider.notifier).lock(),
+          ),
+        ],
       ),
+      body: body,
     );
   }
 

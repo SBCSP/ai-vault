@@ -131,6 +131,24 @@ class Servers extends Table {
   Set<Column> get primaryKey => {id};
 }
 
+class DailyMetrics extends Table {
+  /// Date stored as yyyy-MM-dd string for unique daily snapshots.
+  TextColumn get date => text()();
+  IntColumn get secretsCount => integer().withDefault(const Constant(0))();
+  IntColumn get notesCount => integer().withDefault(const Constant(0))();
+  IntColumn get ideasCount => integer().withDefault(const Constant(0))();
+  IntColumn get documentsCount => integer().withDefault(const Constant(0))();
+  IntColumn get chatsCount => integer().withDefault(const Constant(0))();
+  IntColumn get serversCount => integer().withDefault(const Constant(0))();
+  IntColumn get expiredCount => integer().withDefault(const Constant(0))();
+  IntColumn get expiringSoonCount =>
+      integer().withDefault(const Constant(0))();
+  DateTimeColumn get createdAt => dateTime()();
+
+  @override
+  Set<Column> get primaryKey => {date};
+}
+
 class AuditLogs extends Table {
   IntColumn get id => integer().autoIncrement()();
   TextColumn get action => text()(); // e.g. 'secret.created', 'note.deleted'
@@ -153,6 +171,7 @@ class AuditLogs extends Table {
   AuditLogs,
   McpServers,
   Servers,
+  DailyMetrics,
 ])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(openConnection());
@@ -160,7 +179,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 10;
+  int get schemaVersion => 11;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -193,6 +212,9 @@ class AppDatabase extends _$AppDatabase {
           }
           if (from < 10) {
             await migrator.createTable(servers);
+          }
+          if (from < 11) {
+            await migrator.createTable(dailyMetrics);
           }
         },
       );
@@ -368,6 +390,9 @@ class AppDatabase extends _$AppDatabase {
             ..limit(limit))
           .watch();
 
+  Future<AuditLog?> getAuditLogById(int id) =>
+      (select(auditLogs)..where((t) => t.id.equals(id))).getSingleOrNull();
+
   Future<void> clearAuditLogs() => delete(auditLogs).go();
 
   // --- MCP Servers ---
@@ -400,4 +425,28 @@ class AppDatabase extends _$AppDatabase {
 
   Future<void> deleteServer(String id) =>
       (delete(servers)..where((t) => t.id.equals(id))).go();
+
+  // --- Daily Metrics ---
+  Future<void> upsertDailyMetric(DailyMetricsCompanion metric) =>
+      into(dailyMetrics).insertOnConflictUpdate(metric);
+
+  Future<List<DailyMetric>> getMetricsSince(DateTime since) {
+    final sinceStr =
+        '${since.year}-${since.month.toString().padLeft(2, '0')}-${since.day.toString().padLeft(2, '0')}';
+    return (select(dailyMetrics)
+          ..where((t) => t.date.isBiggerOrEqualValue(sinceStr))
+          ..orderBy([(t) => OrderingTerm.asc(t.date)]))
+        .get();
+  }
+
+  Future<List<DailyMetric>> getAllMetrics() =>
+      (select(dailyMetrics)..orderBy([(t) => OrderingTerm.asc(t.date)])).get();
+
+  // --- Audit Timeseries ---
+  /// Returns all audit logs since [since], ordered by date ascending.
+  Future<List<AuditLog>> getAuditLogsSince(DateTime since) =>
+      (select(auditLogs)
+            ..where((t) => t.createdAt.isBiggerOrEqualValue(since))
+            ..orderBy([(t) => OrderingTerm.asc(t.createdAt)]))
+          .get();
 }

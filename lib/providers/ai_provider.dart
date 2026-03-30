@@ -239,6 +239,7 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
       List<String> ragDocumentTitles = [];
       List<ChatSession>? ragChatSessions;
       List<({String title, String content})>? ragWikiPages;
+      List<db.AuditLog>? ragAuditLogs;
       bool ragUsed = false;
 
       try {
@@ -362,6 +363,23 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
                   }
                 }
               }
+
+              // Audit logs matched by RAG
+              final auditIds = topK
+                  .where((s) => s.sourceType == 'audit_log')
+                  .map((s) => s.sourceId) // sourceId is 'audit:123'
+                  .toSet();
+              if (auditIds.isNotEmpty) {
+                ragAuditLogs = [];
+                for (final auditId in auditIds) {
+                  final idStr = auditId.replaceFirst('audit:', '');
+                  final id = int.tryParse(idStr);
+                  if (id != null) {
+                    final log = await database.getAuditLogById(id);
+                    if (log != null) ragAuditLogs.add(log);
+                  }
+                }
+              }
             }
           }
         }
@@ -402,6 +420,7 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
           documentTitles: ragDocumentTitles,
           chatSessions: ragChatSessions,
           wikiPages: ragWikiPages,
+          auditLogs: ragAuditLogs,
         );
 
         final ollamaTools = mcpService.getOllamaToolsJson();
@@ -571,6 +590,7 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
             ragEntries, ragNotes, ragIdeas, ragChunks,
             ragDocumentTitles, ragChatSessions,
             wikiPages: ragWikiPages,
+            auditLogs: ragAuditLogs,
           ),
           toolCalls: allToolCalls,
           mcpUsed: true,
@@ -602,6 +622,7 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
           documentTitles: ragDocumentTitles,
           chatSessions: ragChatSessions,
           wikiPages: ragWikiPages,
+          auditLogs: ragAuditLogs,
         );
 
         // Add placeholder assistant message for streaming
@@ -648,6 +669,7 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
             ragEntries, ragNotes, ragIdeas, ragChunks,
             ragDocumentTitles, ragChatSessions,
             wikiPages: ragWikiPages,
+            auditLogs: ragAuditLogs,
           ),
           isCloudResponse: true,
         ));
@@ -691,6 +713,7 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
           documentTitles: ragDocumentTitles,
           chatSessions: ragChatSessions,
           wikiPages: ragWikiPages,
+          auditLogs: ragAuditLogs,
         );
 
         final messages = <Map<String, String>>[
@@ -745,6 +768,7 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
             ragEntries, ragNotes, ragIdeas, ragChunks,
             ragDocumentTitles, ragChatSessions,
             wikiPages: ragWikiPages,
+            auditLogs: ragAuditLogs,
           ),
         ));
 
