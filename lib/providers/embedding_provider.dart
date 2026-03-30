@@ -335,6 +335,50 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
     await refreshStats();
   }
 
+  /// Index a single audit log entry.
+  Future<void> indexAuditLog(AuditLog log) async {
+    final sourceId = 'audit:${log.id}';
+    final text = EmbeddingService.buildAuditLogText(
+      log.action,
+      log.targetType,
+      log.targetName,
+      log.details,
+      log.createdAt,
+    );
+    final hash = EmbeddingService.computeContentHash(text);
+
+    final existing = await _db.getEmbeddingBySourceId(sourceId);
+    if (existing != null &&
+        existing.contentHash == hash &&
+        existing.modelName == _modelName) {
+      return;
+    }
+
+    final vector = await _service.generateEmbedding(text);
+    if (vector == null) return;
+
+    await _db.upsertEmbedding(EmbeddingsCompanion(
+      id: Value(existing?.id ?? _uuid.v4()),
+      sourceId: Value(sourceId),
+      sourceType: const Value('audit_log'),
+      embedding: Value(jsonEncode(vector)),
+      modelName: Value(_modelName),
+      contentHash: Value(hash),
+      createdAt: Value(DateTime.now()),
+    ));
+
+    await refreshStats();
+  }
+
+  /// Batch-index all un-indexed audit logs.
+  Future<void> indexAllAuditLogs() async {
+    final allLogs = await _db.getAuditLogs(limit: 10000, offset: 0);
+    for (final log in allLogs) {
+      if (!mounted) return;
+      await indexAuditLog(log);
+    }
+  }
+
   /// Index all wiki pages from bundled assets.
   /// Uses a version-based hash so pages are only re-indexed when the app updates.
   Future<void> indexWikiPages() async {
@@ -422,8 +466,11 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
     // Include indexed chat sessions in re-index
     final indexedSessions = await _db.getIndexedChatSessions();
 
+    // Include audit logs in re-index
+    final auditLogs = await _db.getAuditLogs(limit: 10000, offset: 0);
+
     final total = entries.length + notesList.length + ideaList.length +
-        docsList.length + indexedSessions.length;
+        docsList.length + indexedSessions.length + auditLogs.length;
     state = EmbeddingIndexState(
       isIndexing: true,
       totalItems: total,
@@ -599,6 +646,39 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
           id: Value(_uuid.v4()),
           sourceId: Value(chatSession.id),
           sourceType: const Value('chat_session'),
+          embedding: Value(jsonEncode(vector)),
+          modelName: Value(_modelName),
+          contentHash: Value(hash),
+          createdAt: Value(DateTime.now()),
+        ));
+      }
+
+      processed++;
+      if (mounted) {
+        state = state.copyWith(processedItems: processed);
+      }
+    }
+
+    // Re-index audit logs
+    for (final log in auditLogs) {
+      if (!mounted) return;
+
+      final sourceId = 'audit:${log.id}';
+      final text = EmbeddingService.buildAuditLogText(
+        log.action,
+        log.targetType,
+        log.targetName,
+        log.details,
+        log.createdAt,
+      );
+      final hash = EmbeddingService.computeContentHash(text);
+      final vector = await _service.generateEmbedding(text);
+
+      if (vector != null) {
+        await _db.upsertEmbedding(EmbeddingsCompanion(
+          id: Value(_uuid.v4()),
+          sourceId: Value(sourceId),
+          sourceType: const Value('audit_log'),
           embedding: Value(jsonEncode(vector)),
           modelName: Value(_modelName),
           contentHash: Value(hash),

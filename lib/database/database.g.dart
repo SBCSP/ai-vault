@@ -4799,6 +4799,633 @@ class ServersCompanion extends UpdateCompanion<Server> {
   }
 }
 
+class $DailyMetricsTable extends DailyMetrics
+    with TableInfo<$DailyMetricsTable, DailyMetric> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $DailyMetricsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _dateMeta = const VerificationMeta('date');
+  @override
+  late final GeneratedColumn<String> date = GeneratedColumn<String>(
+    'date',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _secretsCountMeta = const VerificationMeta(
+    'secretsCount',
+  );
+  @override
+  late final GeneratedColumn<int> secretsCount = GeneratedColumn<int>(
+    'secrets_count',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _notesCountMeta = const VerificationMeta(
+    'notesCount',
+  );
+  @override
+  late final GeneratedColumn<int> notesCount = GeneratedColumn<int>(
+    'notes_count',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _ideasCountMeta = const VerificationMeta(
+    'ideasCount',
+  );
+  @override
+  late final GeneratedColumn<int> ideasCount = GeneratedColumn<int>(
+    'ideas_count',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _documentsCountMeta = const VerificationMeta(
+    'documentsCount',
+  );
+  @override
+  late final GeneratedColumn<int> documentsCount = GeneratedColumn<int>(
+    'documents_count',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _chatsCountMeta = const VerificationMeta(
+    'chatsCount',
+  );
+  @override
+  late final GeneratedColumn<int> chatsCount = GeneratedColumn<int>(
+    'chats_count',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _serversCountMeta = const VerificationMeta(
+    'serversCount',
+  );
+  @override
+  late final GeneratedColumn<int> serversCount = GeneratedColumn<int>(
+    'servers_count',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _expiredCountMeta = const VerificationMeta(
+    'expiredCount',
+  );
+  @override
+  late final GeneratedColumn<int> expiredCount = GeneratedColumn<int>(
+    'expired_count',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _expiringSoonCountMeta = const VerificationMeta(
+    'expiringSoonCount',
+  );
+  @override
+  late final GeneratedColumn<int> expiringSoonCount = GeneratedColumn<int>(
+    'expiring_soon_count',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    date,
+    secretsCount,
+    notesCount,
+    ideasCount,
+    documentsCount,
+    chatsCount,
+    serversCount,
+    expiredCount,
+    expiringSoonCount,
+    createdAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'daily_metrics';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<DailyMetric> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('date')) {
+      context.handle(
+        _dateMeta,
+        date.isAcceptableOrUnknown(data['date']!, _dateMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_dateMeta);
+    }
+    if (data.containsKey('secrets_count')) {
+      context.handle(
+        _secretsCountMeta,
+        secretsCount.isAcceptableOrUnknown(
+          data['secrets_count']!,
+          _secretsCountMeta,
+        ),
+      );
+    }
+    if (data.containsKey('notes_count')) {
+      context.handle(
+        _notesCountMeta,
+        notesCount.isAcceptableOrUnknown(data['notes_count']!, _notesCountMeta),
+      );
+    }
+    if (data.containsKey('ideas_count')) {
+      context.handle(
+        _ideasCountMeta,
+        ideasCount.isAcceptableOrUnknown(data['ideas_count']!, _ideasCountMeta),
+      );
+    }
+    if (data.containsKey('documents_count')) {
+      context.handle(
+        _documentsCountMeta,
+        documentsCount.isAcceptableOrUnknown(
+          data['documents_count']!,
+          _documentsCountMeta,
+        ),
+      );
+    }
+    if (data.containsKey('chats_count')) {
+      context.handle(
+        _chatsCountMeta,
+        chatsCount.isAcceptableOrUnknown(data['chats_count']!, _chatsCountMeta),
+      );
+    }
+    if (data.containsKey('servers_count')) {
+      context.handle(
+        _serversCountMeta,
+        serversCount.isAcceptableOrUnknown(
+          data['servers_count']!,
+          _serversCountMeta,
+        ),
+      );
+    }
+    if (data.containsKey('expired_count')) {
+      context.handle(
+        _expiredCountMeta,
+        expiredCount.isAcceptableOrUnknown(
+          data['expired_count']!,
+          _expiredCountMeta,
+        ),
+      );
+    }
+    if (data.containsKey('expiring_soon_count')) {
+      context.handle(
+        _expiringSoonCountMeta,
+        expiringSoonCount.isAcceptableOrUnknown(
+          data['expiring_soon_count']!,
+          _expiringSoonCountMeta,
+        ),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {date};
+  @override
+  DailyMetric map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return DailyMetric(
+      date: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}date'],
+      )!,
+      secretsCount: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}secrets_count'],
+      )!,
+      notesCount: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}notes_count'],
+      )!,
+      ideasCount: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}ideas_count'],
+      )!,
+      documentsCount: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}documents_count'],
+      )!,
+      chatsCount: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}chats_count'],
+      )!,
+      serversCount: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}servers_count'],
+      )!,
+      expiredCount: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}expired_count'],
+      )!,
+      expiringSoonCount: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}expiring_soon_count'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+    );
+  }
+
+  @override
+  $DailyMetricsTable createAlias(String alias) {
+    return $DailyMetricsTable(attachedDatabase, alias);
+  }
+}
+
+class DailyMetric extends DataClass implements Insertable<DailyMetric> {
+  /// Date stored as yyyy-MM-dd string for unique daily snapshots.
+  final String date;
+  final int secretsCount;
+  final int notesCount;
+  final int ideasCount;
+  final int documentsCount;
+  final int chatsCount;
+  final int serversCount;
+  final int expiredCount;
+  final int expiringSoonCount;
+  final DateTime createdAt;
+  const DailyMetric({
+    required this.date,
+    required this.secretsCount,
+    required this.notesCount,
+    required this.ideasCount,
+    required this.documentsCount,
+    required this.chatsCount,
+    required this.serversCount,
+    required this.expiredCount,
+    required this.expiringSoonCount,
+    required this.createdAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['date'] = Variable<String>(date);
+    map['secrets_count'] = Variable<int>(secretsCount);
+    map['notes_count'] = Variable<int>(notesCount);
+    map['ideas_count'] = Variable<int>(ideasCount);
+    map['documents_count'] = Variable<int>(documentsCount);
+    map['chats_count'] = Variable<int>(chatsCount);
+    map['servers_count'] = Variable<int>(serversCount);
+    map['expired_count'] = Variable<int>(expiredCount);
+    map['expiring_soon_count'] = Variable<int>(expiringSoonCount);
+    map['created_at'] = Variable<DateTime>(createdAt);
+    return map;
+  }
+
+  DailyMetricsCompanion toCompanion(bool nullToAbsent) {
+    return DailyMetricsCompanion(
+      date: Value(date),
+      secretsCount: Value(secretsCount),
+      notesCount: Value(notesCount),
+      ideasCount: Value(ideasCount),
+      documentsCount: Value(documentsCount),
+      chatsCount: Value(chatsCount),
+      serversCount: Value(serversCount),
+      expiredCount: Value(expiredCount),
+      expiringSoonCount: Value(expiringSoonCount),
+      createdAt: Value(createdAt),
+    );
+  }
+
+  factory DailyMetric.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return DailyMetric(
+      date: serializer.fromJson<String>(json['date']),
+      secretsCount: serializer.fromJson<int>(json['secretsCount']),
+      notesCount: serializer.fromJson<int>(json['notesCount']),
+      ideasCount: serializer.fromJson<int>(json['ideasCount']),
+      documentsCount: serializer.fromJson<int>(json['documentsCount']),
+      chatsCount: serializer.fromJson<int>(json['chatsCount']),
+      serversCount: serializer.fromJson<int>(json['serversCount']),
+      expiredCount: serializer.fromJson<int>(json['expiredCount']),
+      expiringSoonCount: serializer.fromJson<int>(json['expiringSoonCount']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'date': serializer.toJson<String>(date),
+      'secretsCount': serializer.toJson<int>(secretsCount),
+      'notesCount': serializer.toJson<int>(notesCount),
+      'ideasCount': serializer.toJson<int>(ideasCount),
+      'documentsCount': serializer.toJson<int>(documentsCount),
+      'chatsCount': serializer.toJson<int>(chatsCount),
+      'serversCount': serializer.toJson<int>(serversCount),
+      'expiredCount': serializer.toJson<int>(expiredCount),
+      'expiringSoonCount': serializer.toJson<int>(expiringSoonCount),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+    };
+  }
+
+  DailyMetric copyWith({
+    String? date,
+    int? secretsCount,
+    int? notesCount,
+    int? ideasCount,
+    int? documentsCount,
+    int? chatsCount,
+    int? serversCount,
+    int? expiredCount,
+    int? expiringSoonCount,
+    DateTime? createdAt,
+  }) => DailyMetric(
+    date: date ?? this.date,
+    secretsCount: secretsCount ?? this.secretsCount,
+    notesCount: notesCount ?? this.notesCount,
+    ideasCount: ideasCount ?? this.ideasCount,
+    documentsCount: documentsCount ?? this.documentsCount,
+    chatsCount: chatsCount ?? this.chatsCount,
+    serversCount: serversCount ?? this.serversCount,
+    expiredCount: expiredCount ?? this.expiredCount,
+    expiringSoonCount: expiringSoonCount ?? this.expiringSoonCount,
+    createdAt: createdAt ?? this.createdAt,
+  );
+  DailyMetric copyWithCompanion(DailyMetricsCompanion data) {
+    return DailyMetric(
+      date: data.date.present ? data.date.value : this.date,
+      secretsCount: data.secretsCount.present
+          ? data.secretsCount.value
+          : this.secretsCount,
+      notesCount: data.notesCount.present
+          ? data.notesCount.value
+          : this.notesCount,
+      ideasCount: data.ideasCount.present
+          ? data.ideasCount.value
+          : this.ideasCount,
+      documentsCount: data.documentsCount.present
+          ? data.documentsCount.value
+          : this.documentsCount,
+      chatsCount: data.chatsCount.present
+          ? data.chatsCount.value
+          : this.chatsCount,
+      serversCount: data.serversCount.present
+          ? data.serversCount.value
+          : this.serversCount,
+      expiredCount: data.expiredCount.present
+          ? data.expiredCount.value
+          : this.expiredCount,
+      expiringSoonCount: data.expiringSoonCount.present
+          ? data.expiringSoonCount.value
+          : this.expiringSoonCount,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DailyMetric(')
+          ..write('date: $date, ')
+          ..write('secretsCount: $secretsCount, ')
+          ..write('notesCount: $notesCount, ')
+          ..write('ideasCount: $ideasCount, ')
+          ..write('documentsCount: $documentsCount, ')
+          ..write('chatsCount: $chatsCount, ')
+          ..write('serversCount: $serversCount, ')
+          ..write('expiredCount: $expiredCount, ')
+          ..write('expiringSoonCount: $expiringSoonCount, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    date,
+    secretsCount,
+    notesCount,
+    ideasCount,
+    documentsCount,
+    chatsCount,
+    serversCount,
+    expiredCount,
+    expiringSoonCount,
+    createdAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is DailyMetric &&
+          other.date == this.date &&
+          other.secretsCount == this.secretsCount &&
+          other.notesCount == this.notesCount &&
+          other.ideasCount == this.ideasCount &&
+          other.documentsCount == this.documentsCount &&
+          other.chatsCount == this.chatsCount &&
+          other.serversCount == this.serversCount &&
+          other.expiredCount == this.expiredCount &&
+          other.expiringSoonCount == this.expiringSoonCount &&
+          other.createdAt == this.createdAt);
+}
+
+class DailyMetricsCompanion extends UpdateCompanion<DailyMetric> {
+  final Value<String> date;
+  final Value<int> secretsCount;
+  final Value<int> notesCount;
+  final Value<int> ideasCount;
+  final Value<int> documentsCount;
+  final Value<int> chatsCount;
+  final Value<int> serversCount;
+  final Value<int> expiredCount;
+  final Value<int> expiringSoonCount;
+  final Value<DateTime> createdAt;
+  final Value<int> rowid;
+  const DailyMetricsCompanion({
+    this.date = const Value.absent(),
+    this.secretsCount = const Value.absent(),
+    this.notesCount = const Value.absent(),
+    this.ideasCount = const Value.absent(),
+    this.documentsCount = const Value.absent(),
+    this.chatsCount = const Value.absent(),
+    this.serversCount = const Value.absent(),
+    this.expiredCount = const Value.absent(),
+    this.expiringSoonCount = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  DailyMetricsCompanion.insert({
+    required String date,
+    this.secretsCount = const Value.absent(),
+    this.notesCount = const Value.absent(),
+    this.ideasCount = const Value.absent(),
+    this.documentsCount = const Value.absent(),
+    this.chatsCount = const Value.absent(),
+    this.serversCount = const Value.absent(),
+    this.expiredCount = const Value.absent(),
+    this.expiringSoonCount = const Value.absent(),
+    required DateTime createdAt,
+    this.rowid = const Value.absent(),
+  }) : date = Value(date),
+       createdAt = Value(createdAt);
+  static Insertable<DailyMetric> custom({
+    Expression<String>? date,
+    Expression<int>? secretsCount,
+    Expression<int>? notesCount,
+    Expression<int>? ideasCount,
+    Expression<int>? documentsCount,
+    Expression<int>? chatsCount,
+    Expression<int>? serversCount,
+    Expression<int>? expiredCount,
+    Expression<int>? expiringSoonCount,
+    Expression<DateTime>? createdAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (date != null) 'date': date,
+      if (secretsCount != null) 'secrets_count': secretsCount,
+      if (notesCount != null) 'notes_count': notesCount,
+      if (ideasCount != null) 'ideas_count': ideasCount,
+      if (documentsCount != null) 'documents_count': documentsCount,
+      if (chatsCount != null) 'chats_count': chatsCount,
+      if (serversCount != null) 'servers_count': serversCount,
+      if (expiredCount != null) 'expired_count': expiredCount,
+      if (expiringSoonCount != null) 'expiring_soon_count': expiringSoonCount,
+      if (createdAt != null) 'created_at': createdAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  DailyMetricsCompanion copyWith({
+    Value<String>? date,
+    Value<int>? secretsCount,
+    Value<int>? notesCount,
+    Value<int>? ideasCount,
+    Value<int>? documentsCount,
+    Value<int>? chatsCount,
+    Value<int>? serversCount,
+    Value<int>? expiredCount,
+    Value<int>? expiringSoonCount,
+    Value<DateTime>? createdAt,
+    Value<int>? rowid,
+  }) {
+    return DailyMetricsCompanion(
+      date: date ?? this.date,
+      secretsCount: secretsCount ?? this.secretsCount,
+      notesCount: notesCount ?? this.notesCount,
+      ideasCount: ideasCount ?? this.ideasCount,
+      documentsCount: documentsCount ?? this.documentsCount,
+      chatsCount: chatsCount ?? this.chatsCount,
+      serversCount: serversCount ?? this.serversCount,
+      expiredCount: expiredCount ?? this.expiredCount,
+      expiringSoonCount: expiringSoonCount ?? this.expiringSoonCount,
+      createdAt: createdAt ?? this.createdAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (date.present) {
+      map['date'] = Variable<String>(date.value);
+    }
+    if (secretsCount.present) {
+      map['secrets_count'] = Variable<int>(secretsCount.value);
+    }
+    if (notesCount.present) {
+      map['notes_count'] = Variable<int>(notesCount.value);
+    }
+    if (ideasCount.present) {
+      map['ideas_count'] = Variable<int>(ideasCount.value);
+    }
+    if (documentsCount.present) {
+      map['documents_count'] = Variable<int>(documentsCount.value);
+    }
+    if (chatsCount.present) {
+      map['chats_count'] = Variable<int>(chatsCount.value);
+    }
+    if (serversCount.present) {
+      map['servers_count'] = Variable<int>(serversCount.value);
+    }
+    if (expiredCount.present) {
+      map['expired_count'] = Variable<int>(expiredCount.value);
+    }
+    if (expiringSoonCount.present) {
+      map['expiring_soon_count'] = Variable<int>(expiringSoonCount.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DailyMetricsCompanion(')
+          ..write('date: $date, ')
+          ..write('secretsCount: $secretsCount, ')
+          ..write('notesCount: $notesCount, ')
+          ..write('ideasCount: $ideasCount, ')
+          ..write('documentsCount: $documentsCount, ')
+          ..write('chatsCount: $chatsCount, ')
+          ..write('serversCount: $serversCount, ')
+          ..write('expiredCount: $expiredCount, ')
+          ..write('expiringSoonCount: $expiringSoonCount, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -4812,6 +5439,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $AuditLogsTable auditLogs = $AuditLogsTable(this);
   late final $McpServersTable mcpServers = $McpServersTable(this);
   late final $ServersTable servers = $ServersTable(this);
+  late final $DailyMetricsTable dailyMetrics = $DailyMetricsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -4827,6 +5455,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     auditLogs,
     mcpServers,
     servers,
+    dailyMetrics,
   ];
 }
 
@@ -7285,6 +7914,317 @@ typedef $$ServersTableProcessedTableManager =
       Server,
       PrefetchHooks Function()
     >;
+typedef $$DailyMetricsTableCreateCompanionBuilder =
+    DailyMetricsCompanion Function({
+      required String date,
+      Value<int> secretsCount,
+      Value<int> notesCount,
+      Value<int> ideasCount,
+      Value<int> documentsCount,
+      Value<int> chatsCount,
+      Value<int> serversCount,
+      Value<int> expiredCount,
+      Value<int> expiringSoonCount,
+      required DateTime createdAt,
+      Value<int> rowid,
+    });
+typedef $$DailyMetricsTableUpdateCompanionBuilder =
+    DailyMetricsCompanion Function({
+      Value<String> date,
+      Value<int> secretsCount,
+      Value<int> notesCount,
+      Value<int> ideasCount,
+      Value<int> documentsCount,
+      Value<int> chatsCount,
+      Value<int> serversCount,
+      Value<int> expiredCount,
+      Value<int> expiringSoonCount,
+      Value<DateTime> createdAt,
+      Value<int> rowid,
+    });
+
+class $$DailyMetricsTableFilterComposer
+    extends Composer<_$AppDatabase, $DailyMetricsTable> {
+  $$DailyMetricsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get date => $composableBuilder(
+    column: $table.date,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get secretsCount => $composableBuilder(
+    column: $table.secretsCount,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get notesCount => $composableBuilder(
+    column: $table.notesCount,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get ideasCount => $composableBuilder(
+    column: $table.ideasCount,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get documentsCount => $composableBuilder(
+    column: $table.documentsCount,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get chatsCount => $composableBuilder(
+    column: $table.chatsCount,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get serversCount => $composableBuilder(
+    column: $table.serversCount,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get expiredCount => $composableBuilder(
+    column: $table.expiredCount,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get expiringSoonCount => $composableBuilder(
+    column: $table.expiringSoonCount,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$DailyMetricsTableOrderingComposer
+    extends Composer<_$AppDatabase, $DailyMetricsTable> {
+  $$DailyMetricsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get date => $composableBuilder(
+    column: $table.date,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get secretsCount => $composableBuilder(
+    column: $table.secretsCount,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get notesCount => $composableBuilder(
+    column: $table.notesCount,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get ideasCount => $composableBuilder(
+    column: $table.ideasCount,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get documentsCount => $composableBuilder(
+    column: $table.documentsCount,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get chatsCount => $composableBuilder(
+    column: $table.chatsCount,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get serversCount => $composableBuilder(
+    column: $table.serversCount,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get expiredCount => $composableBuilder(
+    column: $table.expiredCount,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get expiringSoonCount => $composableBuilder(
+    column: $table.expiringSoonCount,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$DailyMetricsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $DailyMetricsTable> {
+  $$DailyMetricsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get date =>
+      $composableBuilder(column: $table.date, builder: (column) => column);
+
+  GeneratedColumn<int> get secretsCount => $composableBuilder(
+    column: $table.secretsCount,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get notesCount => $composableBuilder(
+    column: $table.notesCount,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get ideasCount => $composableBuilder(
+    column: $table.ideasCount,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get documentsCount => $composableBuilder(
+    column: $table.documentsCount,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get chatsCount => $composableBuilder(
+    column: $table.chatsCount,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get serversCount => $composableBuilder(
+    column: $table.serversCount,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get expiredCount => $composableBuilder(
+    column: $table.expiredCount,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get expiringSoonCount => $composableBuilder(
+    column: $table.expiringSoonCount,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+}
+
+class $$DailyMetricsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $DailyMetricsTable,
+          DailyMetric,
+          $$DailyMetricsTableFilterComposer,
+          $$DailyMetricsTableOrderingComposer,
+          $$DailyMetricsTableAnnotationComposer,
+          $$DailyMetricsTableCreateCompanionBuilder,
+          $$DailyMetricsTableUpdateCompanionBuilder,
+          (
+            DailyMetric,
+            BaseReferences<_$AppDatabase, $DailyMetricsTable, DailyMetric>,
+          ),
+          DailyMetric,
+          PrefetchHooks Function()
+        > {
+  $$DailyMetricsTableTableManager(_$AppDatabase db, $DailyMetricsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$DailyMetricsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$DailyMetricsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$DailyMetricsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> date = const Value.absent(),
+                Value<int> secretsCount = const Value.absent(),
+                Value<int> notesCount = const Value.absent(),
+                Value<int> ideasCount = const Value.absent(),
+                Value<int> documentsCount = const Value.absent(),
+                Value<int> chatsCount = const Value.absent(),
+                Value<int> serversCount = const Value.absent(),
+                Value<int> expiredCount = const Value.absent(),
+                Value<int> expiringSoonCount = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => DailyMetricsCompanion(
+                date: date,
+                secretsCount: secretsCount,
+                notesCount: notesCount,
+                ideasCount: ideasCount,
+                documentsCount: documentsCount,
+                chatsCount: chatsCount,
+                serversCount: serversCount,
+                expiredCount: expiredCount,
+                expiringSoonCount: expiringSoonCount,
+                createdAt: createdAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String date,
+                Value<int> secretsCount = const Value.absent(),
+                Value<int> notesCount = const Value.absent(),
+                Value<int> ideasCount = const Value.absent(),
+                Value<int> documentsCount = const Value.absent(),
+                Value<int> chatsCount = const Value.absent(),
+                Value<int> serversCount = const Value.absent(),
+                Value<int> expiredCount = const Value.absent(),
+                Value<int> expiringSoonCount = const Value.absent(),
+                required DateTime createdAt,
+                Value<int> rowid = const Value.absent(),
+              }) => DailyMetricsCompanion.insert(
+                date: date,
+                secretsCount: secretsCount,
+                notesCount: notesCount,
+                ideasCount: ideasCount,
+                documentsCount: documentsCount,
+                chatsCount: chatsCount,
+                serversCount: serversCount,
+                expiredCount: expiredCount,
+                expiringSoonCount: expiringSoonCount,
+                createdAt: createdAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$DailyMetricsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $DailyMetricsTable,
+      DailyMetric,
+      $$DailyMetricsTableFilterComposer,
+      $$DailyMetricsTableOrderingComposer,
+      $$DailyMetricsTableAnnotationComposer,
+      $$DailyMetricsTableCreateCompanionBuilder,
+      $$DailyMetricsTableUpdateCompanionBuilder,
+      (
+        DailyMetric,
+        BaseReferences<_$AppDatabase, $DailyMetricsTable, DailyMetric>,
+      ),
+      DailyMetric,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -7309,4 +8249,6 @@ class $AppDatabaseManager {
       $$McpServersTableTableManager(_db, _db.mcpServers);
   $$ServersTableTableManager get servers =>
       $$ServersTableTableManager(_db, _db.servers);
+  $$DailyMetricsTableTableManager get dailyMetrics =>
+      $$DailyMetricsTableTableManager(_db, _db.dailyMetrics);
 }

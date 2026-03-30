@@ -9,7 +9,8 @@ import '../widgets/markdown_response.dart';
 /// In-app wiki viewer. Loads markdown pages from bundled assets
 /// defined in wiki/wiki.json.
 class WikiScreen extends StatefulWidget {
-  const WikiScreen({super.key});
+  final bool embedded;
+  const WikiScreen({super.key, this.embedded = false});
 
   @override
   State<WikiScreen> createState() => _WikiScreenState();
@@ -92,33 +93,7 @@ class _WikiScreenState extends State<WikiScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.menu_book, size: 20, color: theme.colorScheme.primary),
-            const SizedBox(width: 8),
-            const Text('Wiki'),
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.primaryContainer,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                'v$appVersion',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: theme.colorScheme.onPrimaryContainer,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-      body: _loading
+    final body = _loading
           ? const Center(child: CircularProgressIndicator())
           : Row(
               children: [
@@ -181,7 +156,39 @@ class _WikiScreenState extends State<WikiScreen> {
                         ),
                 ),
               ],
+            );
+
+    if (widget.embedded) {
+      return body;
+    }
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.menu_book, size: 20, color: theme.colorScheme.primary),
+            const SizedBox(width: 8),
+            const Text('Wiki'),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primaryContainer,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                'v$appVersion',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.onPrimaryContainer,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ),
+          ],
+        ),
+      ),
+      body: body,
     );
   }
 }

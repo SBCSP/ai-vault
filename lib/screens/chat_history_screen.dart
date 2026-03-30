@@ -6,10 +6,12 @@ import '../providers/ai_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/chat_history_provider.dart';
 import '../providers/embedding_provider.dart';
+import '../providers/shell_navigation_provider.dart';
 import 'chat_screen.dart';
 
 class ChatHistoryScreen extends ConsumerStatefulWidget {
-  const ChatHistoryScreen({super.key});
+  final bool embedded;
+  const ChatHistoryScreen({super.key, this.embedded = false});
 
   @override
   ConsumerState<ChatHistoryScreen> createState() => _ChatHistoryScreenState();
@@ -23,18 +25,7 @@ class _ChatHistoryScreenState extends ConsumerState<ChatHistoryScreen> {
     final theme = Theme.of(context);
     final sessionsAsync = ref.watch(chatSessionsProvider);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Chat History'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.lock),
-            tooltip: 'Lock vault',
-            onPressed: () => ref.read(authStateProvider.notifier).lock(),
-          ),
-        ],
-      ),
-      body: Column(
+    final body = Column(
         children: [
           Padding(
             padding: const EdgeInsets.all(12),
@@ -113,16 +104,37 @@ class _ChatHistoryScreenState extends ConsumerState<ChatHistoryScreen> {
             ),
           ),
         ],
+      );
+
+    if (widget.embedded) {
+      return body;
+    }
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Chat History'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.lock),
+            tooltip: 'Lock vault',
+            onPressed: () => ref.read(authStateProvider.notifier).lock(),
+          ),
+        ],
       ),
+      body: body,
     );
   }
 
   void _openSession(ChatSession session) {
     ref.read(aiChatProvider.notifier).loadSession(session);
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const ChatScreen()),
-    );
+    if (widget.embedded) {
+      ref.read(shellNavigationProvider.notifier).state = 1; // AI Chat
+    } else {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const ChatScreen()),
+      );
+    }
   }
 
   Future<void> _confirmDelete(ChatSession session) async {

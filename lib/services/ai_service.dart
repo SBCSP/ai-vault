@@ -178,6 +178,7 @@ class AiService {
     List<String> documentTitles = const [],
     List<ChatSession>? chatSessions,
     List<({String title, String content})>? wikiPages,
+    List<db.AuditLog>? auditLogs,
   }) {
     final buf = StringBuffer();
     buf.writeln('=== USER RECORDS ===');
@@ -313,6 +314,21 @@ class AiService {
       }
     }
 
+    if (auditLogs != null && auditLogs.isNotEmpty) {
+      buf.writeln('--- AUDIT LOG (${auditLogs.length} event(s)) ---');
+      buf.writeln('These are recent activity events in the vault.');
+      buf.writeln();
+      for (final log in auditLogs) {
+        final dateStr =
+            '${log.createdAt.year}-${log.createdAt.month.toString().padLeft(2, '0')}-${log.createdAt.day.toString().padLeft(2, '0')} '
+            '${log.createdAt.hour.toString().padLeft(2, '0')}:${log.createdAt.minute.toString().padLeft(2, '0')}';
+        buf.writeln('Event: ${log.action} at $dateStr');
+        if (log.targetType.isNotEmpty) buf.writeln('  Target: ${log.targetType} — ${log.targetName}');
+        if (log.details.isNotEmpty) buf.writeln('  Details: ${log.details}');
+        buf.writeln();
+      }
+    }
+
     buf.writeln('=== END RECORDS ===');
     return buf.toString();
   }
@@ -371,6 +387,7 @@ class AiService {
     List<String> documentTitles,
     List<ChatSession>? chatSessions, {
     List<({String title, String content})>? wikiPages,
+    List<db.AuditLog>? auditLogs,
   }) {
     final sources = <String>[];
     if (ragEntries != null && ragEntries.isNotEmpty) {
@@ -397,6 +414,11 @@ class AiService {
     if (wikiPages != null && wikiPages.isNotEmpty) {
       sources.add(
         '${wikiPages.length} wiki page${wikiPages.length == 1 ? '' : 's'}',
+      );
+    }
+    if (auditLogs != null && auditLogs.isNotEmpty) {
+      sources.add(
+        '${auditLogs.length} audit event${auditLogs.length == 1 ? '' : 's'}',
       );
     }
     return sources;

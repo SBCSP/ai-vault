@@ -12,7 +12,8 @@ import '../services/document_service.dart';
 import 'document_form_screen.dart';
 
 class DocumentsListScreen extends ConsumerStatefulWidget {
-  const DocumentsListScreen({super.key});
+  final bool embedded;
+  const DocumentsListScreen({super.key, this.embedded = false});
 
   @override
   ConsumerState<DocumentsListScreen> createState() =>
@@ -35,18 +36,7 @@ class _DocumentsListScreenState extends ConsumerState<DocumentsListScreen> {
     final docsAsync = ref.watch(documentsProvider);
     final theme = Theme.of(context);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Documents'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.lock),
-            tooltip: 'Lock vault',
-            onPressed: () => ref.read(authStateProvider.notifier).lock(),
-          ),
-        ],
-      ),
-      body: Stack(
+    final body = Stack(
         children: [
           Column(
             children: [
@@ -159,7 +149,24 @@ class _DocumentsListScreenState extends ConsumerState<DocumentsListScreen> {
               ),
             ),
         ],
+      );
+
+    if (widget.embedded) {
+      return Scaffold(body: body, floatingActionButton: _buildSpeedDial(context));
+    }
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Documents'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.lock),
+            tooltip: 'Lock vault',
+            onPressed: () => ref.read(authStateProvider.notifier).lock(),
+          ),
+        ],
       ),
+      body: body,
       floatingActionButton: _buildSpeedDial(context),
     );
   }

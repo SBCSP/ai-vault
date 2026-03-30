@@ -8,7 +8,8 @@ import '../providers/notes_provider.dart';
 import 'note_form_screen.dart';
 
 class NotesListScreen extends ConsumerStatefulWidget {
-  const NotesListScreen({super.key});
+  final bool embedded;
+  const NotesListScreen({super.key, this.embedded = false});
 
   @override
   ConsumerState<NotesListScreen> createState() => _NotesListScreenState();
@@ -29,18 +30,7 @@ class _NotesListScreenState extends ConsumerState<NotesListScreen> {
     final notesAsync = ref.watch(notesProvider);
     final theme = Theme.of(context);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Notes'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.lock),
-            tooltip: 'Lock vault',
-            onPressed: () => ref.read(authStateProvider.notifier).lock(),
-          ),
-        ],
-      ),
-      body: Column(
+    final body = Column(
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
@@ -141,14 +131,33 @@ class _NotesListScreenState extends ConsumerState<NotesListScreen> {
             ),
           ),
         ],
+      );
+
+    final fab = FloatingActionButton(
+      onPressed: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const NoteFormScreen()),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const NoteFormScreen()),
-        ),
-        child: const Icon(Icons.note_add),
+      child: const Icon(Icons.note_add),
+    );
+
+    if (widget.embedded) {
+      return Scaffold(body: body, floatingActionButton: fab);
+    }
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Notes'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.lock),
+            tooltip: 'Lock vault',
+            onPressed: () => ref.read(authStateProvider.notifier).lock(),
+          ),
+        ],
       ),
+      body: body,
+      floatingActionButton: fab,
     );
   }
 

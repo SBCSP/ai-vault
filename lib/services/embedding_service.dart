@@ -130,6 +130,26 @@ class EmbeddingService {
     return text.length > 2000 ? text.substring(text.length - 2000) : text;
   }
 
+  /// Build embeddable text for an audit log entry.
+  static String buildAuditLogText(
+    String action,
+    String targetType,
+    String targetName,
+    String details,
+    DateTime createdAt,
+  ) {
+    final dateStr =
+        '${createdAt.year}-${createdAt.month.toString().padLeft(2, '0')}-${createdAt.day.toString().padLeft(2, '0')}';
+    final parts = <String>[
+      'Audit Event: $action',
+      'Date: $dateStr',
+      if (targetType.isNotEmpty) 'Target Type: $targetType',
+      if (targetName.isNotEmpty) 'Target: $targetName',
+      if (details.isNotEmpty) 'Details: $details',
+    ];
+    return parts.join('\n');
+  }
+
   /// SHA-256 hash of text content to detect changes.
   static String computeContentHash(String text) {
     final digest = SHA256Digest();
