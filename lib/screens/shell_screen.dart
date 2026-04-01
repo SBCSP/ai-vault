@@ -16,6 +16,7 @@ import 'notes_list_screen.dart';
 import 'server_management_screen.dart';
 import 'settings_screen.dart';
 import 'vault_list_screen.dart';
+import 'doc_builder_screen.dart';
 import 'wiki_screen.dart';
 
 /// Icon and selected icon for each nav destination, keyed by id.
@@ -30,6 +31,7 @@ const _navIcons = <int, (IconData, IconData)>{
   7: (Icons.dns_outlined, Icons.dns),
   8: (Icons.menu_book_outlined, Icons.menu_book),
   9: (Icons.settings_outlined, Icons.settings),
+  10: (Icons.edit_document, Icons.edit_document),
 };
 
 /// Content builder for each nav destination, keyed by id.
@@ -44,6 +46,7 @@ final _navBuilders = <int, WidgetBuilder>{
   7: (_) => const ServerManagementScreen(embedded: true),
   8: (_) => const WikiScreen(embedded: true),
   9: (_) => const SettingsScreen(embedded: true),
+  10: (_) => const DocBuilderScreen(embedded: true),
 };
 
 /// Shell layout with sidebar NavigationRail and content area.
@@ -56,7 +59,7 @@ class ShellScreen extends ConsumerStatefulWidget {
 
 class _ShellScreenState extends ConsumerState<ShellScreen> {
   /// One Navigator key per section so sub-navigation is preserved.
-  final _navKeys = List.generate(10, (_) => GlobalKey<NavigatorState>());
+  final _navKeys = List.generate(11, (_) => GlobalKey<NavigatorState>());
 
   @override
   void initState() {
@@ -177,7 +180,7 @@ class _ShellScreenState extends ConsumerState<ShellScreen> {
               child: IndexedStack(
                 index: selectedId,
                 children: [
-                  for (var id = 0; id < 10; id++)
+                  for (var id = 0; id < 11; id++)
                     _NestedNavigator(
                       navigatorKey: _navKeys[id],
                       builder: _navBuilders[id]!,

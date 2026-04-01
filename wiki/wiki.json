@@ -22,7 +22,8 @@
         {"title": "RAG Search", "file": "features/rag-search.md"},
         {"title": "MCP Servers", "file": "features/mcp-servers.md"},
         {"title": "Claude API", "file": "features/claude-api.md"},
-        {"title": "Server Monitoring", "file": "features/server-monitoring.md"}
+        {"title": "Server Monitoring", "file": "features/server-monitoring.md"},
+        {"title": "Document Builder", "file": "features/doc-builder.md"}
       ]
     },
     {
