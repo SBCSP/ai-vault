@@ -240,6 +240,7 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
       List<String> ragDocumentTitles = [];
       List<ChatSession>? ragChatSessions;
       List<({String title, String content})>? ragWikiPages;
+      List<db.AuditLog>? ragAuditLogs;
       bool ragUsed = false;
 
       try {
@@ -363,6 +364,23 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
                   }
                 }
               }
+
+              // Audit logs matched by RAG
+              final auditIds = topK
+                  .where((s) => s.sourceType == 'audit_log')
+                  .map((s) => s.sourceId) // sourceId is 'audit:123'
+                  .toSet();
+              if (auditIds.isNotEmpty) {
+                ragAuditLogs = [];
+                for (final auditId in auditIds) {
+                  final idStr = auditId.replaceFirst('audit:', '');
+                  final id = int.tryParse(idStr);
+                  if (id != null) {
+                    final log = await database.getAuditLogById(id);
+                    if (log != null) ragAuditLogs.add(log);
+                  }
+                }
+              }
             }
           }
         }
@@ -415,15 +433,15 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
             ? ragIdeas
             : ideaList;
         final vaultContext = aiService.buildVaultContext(
-              contextEntries,
-              contextNotes,
-              ideas: contextIdeas,
-              documentChunks: ragChunks,
-              documentTitles: ragDocumentTitles,
-              chatSessions: ragChatSessions,
-              wikiPages: ragWikiPages,
-            ) +
-            linearContext;
+          contextEntries,
+          contextNotes,
+          ideas: contextIdeas,
+          documentChunks: ragChunks,
+          documentTitles: ragDocumentTitles,
+          chatSessions: ragChatSessions,
+          wikiPages: ragWikiPages,
+          auditLogs: ragAuditLogs,
+        );
 
         final ollamaTools = mcpService.getOllamaToolsJson();
 
@@ -592,6 +610,7 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
             ragEntries, ragNotes, ragIdeas, ragChunks,
             ragDocumentTitles, ragChatSessions,
             wikiPages: ragWikiPages,
+            auditLogs: ragAuditLogs,
           ),
           toolCalls: allToolCalls,
           mcpUsed: true,
@@ -616,15 +635,15 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
             ? ragIdeas
             : ideaList;
         final vaultContext = aiService.buildVaultContext(
-              [], // Never send secrets to cloud LLM
-              contextNotes,
-              ideas: contextIdeas,
-              documentChunks: ragChunks,
-              documentTitles: ragDocumentTitles,
-              chatSessions: ragChatSessions,
-              wikiPages: ragWikiPages,
-            ) +
-            linearContext;
+          [], // Never send secrets to cloud LLM
+          contextNotes,
+          ideas: contextIdeas,
+          documentChunks: ragChunks,
+          documentTitles: ragDocumentTitles,
+          chatSessions: ragChatSessions,
+          wikiPages: ragWikiPages,
+          auditLogs: ragAuditLogs,
+        );
 
         // Add placeholder assistant message for streaming
         final placeholderMessage = ChatMessage(
@@ -670,6 +689,7 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
             ragEntries, ragNotes, ragIdeas, ragChunks,
             ragDocumentTitles, ragChatSessions,
             wikiPages: ragWikiPages,
+            auditLogs: ragAuditLogs,
           ),
           isCloudResponse: true,
         ));
@@ -706,15 +726,15 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
             ? ragIdeas
             : ideaList;
         final vaultContext = aiService.buildVaultContext(
-              contextEntries,
-              contextNotes,
-              ideas: contextIdeas,
-              documentChunks: ragChunks,
-              documentTitles: ragDocumentTitles,
-              chatSessions: ragChatSessions,
-              wikiPages: ragWikiPages,
-            ) +
-            linearContext;
+          contextEntries,
+          contextNotes,
+          ideas: contextIdeas,
+          documentChunks: ragChunks,
+          documentTitles: ragDocumentTitles,
+          chatSessions: ragChatSessions,
+          wikiPages: ragWikiPages,
+          auditLogs: ragAuditLogs,
+        );
 
         final messages = <Map<String, String>>[
           {'role': 'system', 'content': '${AiService.systemPrompt}\n\n$vaultContext'},
@@ -768,6 +788,7 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
             ragEntries, ragNotes, ragIdeas, ragChunks,
             ragDocumentTitles, ragChatSessions,
             wikiPages: ragWikiPages,
+            auditLogs: ragAuditLogs,
           ),
         ));
 

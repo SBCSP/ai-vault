@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
-import 'package:path_provider/path_provider.dart';
 
 import '../database/database.dart';
 import '../providers/server_provider.dart';
@@ -13,7 +12,8 @@ import '../services/agent_certificate_service.dart';
 import 'server_dashboard_screen.dart';
 
 class ServerManagementScreen extends ConsumerStatefulWidget {
-  const ServerManagementScreen({super.key});
+  final bool embedded;
+  const ServerManagementScreen({super.key, this.embedded = false});
 
   @override
   ConsumerState<ServerManagementScreen> createState() =>
@@ -33,11 +33,7 @@ class _ServerManagementScreenState
     final serversAsync = ref.watch(serversProvider);
     final certsExist = ref.watch(agentCertsExistProvider);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Server Management'),
-      ),
-      body: SingleChildScrollView(
+    final body = SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Center(
           child: ConstrainedBox(
@@ -128,7 +124,15 @@ class _ServerManagementScreenState
             ),
           ),
         ),
-      ),
+      );
+
+    if (widget.embedded) {
+      return body;
+    }
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Server Management')),
+      body: body,
     );
   }
 
@@ -519,6 +523,13 @@ class _ServerManagementScreenState
             },
             child: const Text('Full instructions'),
           ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _showAnsiblePlaybook(filePath, certsDir);
+            },
+            child: const Text('Ansible Playbook'),
+          ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx),
             child: const Text('Done'),
@@ -619,6 +630,174 @@ class _ServerManagementScreenState
           ),
         ),
         actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Done'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showAnsiblePlaybook(String agentPath, String certsDir) {
+    final version = ref.read(appVersionProvider);
+    final isRpm = agentPath.endsWith('.rpm');
+    final filename = agentPath.split('/').last;
+
+    final playbook = '''---
+# Ansible Playbook: Install aiv_agent v$version
+# Usage: ansible-playbook -i inventory.ini install_aiv_agent.yml
+
+- name: Install aiv_agent on remote servers
+  hosts: all
+  become: true
+  vars:
+    agent_version: "$version"
+    certs_dir: /etc/aiv_agent
+    agent_port: 9090
+
+  tasks:
+    - name: Create aiv_agent group
+      group:
+        name: aiv_agent
+        state: present
+
+    - name: Create aiv_agent user
+      user:
+        name: aiv_agent
+        group: aiv_agent
+        system: true
+        shell: /usr/sbin/nologin
+        create_home: false
+
+    - name: Create certificate directory
+      file:
+        path: "{{ certs_dir }}"
+        state: directory
+        owner: aiv_agent
+        group: aiv_agent
+        mode: "0750"
+${isRpm ? '''
+    - name: Copy RPM package to server
+      copy:
+        src: "$agentPath"
+        dest: "/tmp/$filename"
+
+    - name: Install aiv_agent RPM
+      yum:
+        name: "/tmp/$filename"
+        state: present
+        disable_gpg_check: true
+
+    - name: Clean up RPM
+      file:
+        path: "/tmp/$filename"
+        state: absent
+''' : '''
+    - name: Copy agent binary to server
+      copy:
+        src: "$agentPath"
+        dest: /usr/local/bin/aiv_agent
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Create systemd service
+      copy:
+        dest: /etc/systemd/system/aiv_agent.service
+        content: |
+          [Unit]
+          Description=AI VaultIO Agent
+          After=network.target
+
+          [Service]
+          Type=simple
+          User=aiv_agent
+          Group=aiv_agent
+          ExecStart=/usr/local/bin/aiv_agent --port {{ agent_port }}
+          Restart=on-failure
+          RestartSec=5
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Reload systemd
+      systemd:
+        daemon_reload: true
+'''}
+    - name: Copy server certificate
+      copy:
+        src: "$certsDir/server.crt"
+        dest: "{{ certs_dir }}/server.crt"
+        owner: aiv_agent
+        group: aiv_agent
+        mode: "0644"
+
+    - name: Copy server key
+      copy:
+        src: "$certsDir/server.key"
+        dest: "{{ certs_dir }}/server.key"
+        owner: aiv_agent
+        group: aiv_agent
+        mode: "0600"
+
+    - name: Copy CA certificate
+      copy:
+        src: "$certsDir/ca.crt"
+        dest: "{{ certs_dir }}/ca.crt"
+        owner: aiv_agent
+        group: aiv_agent
+        mode: "0644"
+
+    - name: Enable and start aiv_agent
+      systemd:
+        name: aiv_agent
+        enabled: true
+        state: restarted''';
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.terminal, color: Colors.teal, size: 24),
+            const SizedBox(width: 8),
+            const Text('Ansible Playbook'),
+          ],
+        ),
+        content: SizedBox(
+          width: 600,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Save this as install_aiv_agent.yml and run with:',
+                  style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                _codeBlock(
+                  'ansible-playbook -i inventory.ini install_aiv_agent.yml',
+                ),
+                const SizedBox(height: 16),
+                _codeBlock(playbook),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: playbook));
+              ScaffoldMessenger.of(ctx).showSnackBar(
+                const SnackBar(content: Text('Playbook copied to clipboard')),
+              );
+            },
+            child: const Text('Copy Playbook'),
+          ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx),
             child: const Text('Done'),

@@ -3,8 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'providers/auth_provider.dart';
 import 'providers/lock_timeout_provider.dart';
-import 'screens/home_screen.dart';
 import 'screens/lock_screen.dart';
+import 'screens/shell_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -56,7 +56,7 @@ class _AiVaultAppState extends ConsumerState<AiVaultApp> {
         ),
         themeMode: ThemeMode.system,
         home: authState.status == AuthStatus.unlocked
-            ? const HomeScreen()
+            ? const ShellScreen()
             : const LockScreen(),
       ),
     );

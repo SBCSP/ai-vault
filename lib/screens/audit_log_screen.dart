@@ -6,7 +6,8 @@ import '../providers/audit_provider.dart';
 import '../providers/auth_provider.dart';
 
 class AuditLogScreen extends ConsumerStatefulWidget {
-  const AuditLogScreen({super.key});
+  final bool embedded;
+  const AuditLogScreen({super.key, this.embedded = false});
 
   @override
   ConsumerState<AuditLogScreen> createState() => _AuditLogScreenState();
@@ -20,23 +21,7 @@ class _AuditLogScreenState extends ConsumerState<AuditLogScreen> {
     final logsAsync = ref.watch(auditLogsProvider);
     final theme = Theme.of(context);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Audit Log'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.delete_sweep),
-            tooltip: 'Clear all logs',
-            onPressed: () => _confirmClear(context),
-          ),
-          IconButton(
-            icon: const Icon(Icons.lock),
-            tooltip: 'Lock vault',
-            onPressed: () => ref.read(authStateProvider.notifier).lock(),
-          ),
-        ],
-      ),
-      body: Column(
+    final body = Column(
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
@@ -108,7 +93,29 @@ class _AuditLogScreenState extends ConsumerState<AuditLogScreen> {
             ),
           ),
         ],
+      );
+
+    if (widget.embedded) {
+      return body;
+    }
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Audit Log'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.delete_sweep),
+            tooltip: 'Clear all logs',
+            onPressed: () => _confirmClear(context),
+          ),
+          IconButton(
+            icon: const Icon(Icons.lock),
+            tooltip: 'Lock vault',
+            onPressed: () => ref.read(authStateProvider.notifier).lock(),
+          ),
+        ],
       ),
+      body: body,
     );
   }
 

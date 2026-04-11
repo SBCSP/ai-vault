@@ -18,7 +18,8 @@ import 'chat_history_screen.dart';
 /// Shares the same [aiChatProvider] state as the home-screen widget,
 /// so the conversation is seamless when entering/leaving.
 class ChatScreen extends ConsumerStatefulWidget {
-  const ChatScreen({super.key});
+  final bool embedded;
+  const ChatScreen({super.key, this.embedded = false});
 
   @override
   ConsumerState<ChatScreen> createState() => _ChatScreenState();
@@ -259,45 +260,48 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       }
     });
 
-    return Scaffold(
-      appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.close_fullscreen),
-          tooltip: 'Exit focus mode',
-          onPressed: () => Navigator.pop(context),
+    Widget chatToolbar = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(
+            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
+          ),
         ),
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.auto_awesome, size: 18, color: theme.colorScheme.primary),
-            const SizedBox(width: 8),
-            Text(chatState.loadedSessionTitle ?? 'AI Chat'),
-            const SizedBox(width: 8),
-            _LlmProviderBadge(),
-            const SizedBox(width: 4),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.primaryContainer,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(
-                ref.watch(llmProviderTypeProvider) == LlmProviderType.claude
-                    ? ref.watch(claudeApiProvider).model.split('-').take(2).join(' ')
-                    : ref.watch(aiServiceProvider).model,
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: theme.colorScheme.onPrimaryContainer,
-                ),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.auto_awesome, size: 18, color: theme.colorScheme.primary),
+          const SizedBox(width: 8),
+          Text(
+            chatState.loadedSessionTitle ?? 'AI Chat',
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(width: 8),
+          _LlmProviderBadge(),
+          const SizedBox(width: 4),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.primaryContainer,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              ref.watch(llmProviderTypeProvider) == LlmProviderType.claude
+                  ? ref.watch(claudeApiProvider).model.split('-').take(2).join(' ')
+                  : ref.watch(aiServiceProvider).model,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.onPrimaryContainer,
               ),
             ),
-            const SizedBox(width: 6),
-            _SecretsLockBadge(),
-            const SizedBox(width: 6),
-            _McpStatusBadge(),
-          ],
-        ),
-        actions: [
-          // Chat History button
+          ),
+          const SizedBox(width: 6),
+          _SecretsLockBadge(),
+          const SizedBox(width: 6),
+          _McpStatusBadge(),
+          const Spacer(),
           IconButton(
             icon: const Icon(Icons.history, size: 20),
             tooltip: 'Chat History',
@@ -306,7 +310,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               MaterialPageRoute(builder: (_) => const ChatHistoryScreen()),
             ),
           ),
-          // Save & Index button
           IconButton(
             icon: const Icon(Icons.save, size: 20),
             tooltip: chatState.loadedSessionId != null
@@ -317,7 +320,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 ? () => _showSaveDialog()
                 : null,
           ),
-          // New Chat button
           TextButton.icon(
             onPressed: chatState.messages.isNotEmpty
                 ? () => _showNewChatDialog()
@@ -327,7 +329,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           ),
         ],
       ),
-      body: Column(
+    );
+
+    final body = Column(
+      children: [
+        chatToolbar,
+        Expanded(child: Column(
         children: [
           // Messages
           Expanded(
@@ -501,7 +508,24 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             ),
           ),
         ],
+      )),
+      ],
+    );
+
+    if (widget.embedded) {
+      return body;
+    }
+
+    return Scaffold(
+      appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.close_fullscreen),
+          tooltip: 'Exit focus mode',
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: const Text('AI Chat'),
       ),
+      body: body,
     );
   }
 }

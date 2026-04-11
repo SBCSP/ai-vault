@@ -11,7 +11,8 @@ import 'aws_settings_screen.dart';
 import 'entry_form_screen.dart';
 
 class VaultListScreen extends ConsumerStatefulWidget {
-  const VaultListScreen({super.key});
+  final bool embedded;
+  const VaultListScreen({super.key, this.embedded = false});
 
   @override
   ConsumerState<VaultListScreen> createState() => _VaultListScreenState();
@@ -34,27 +35,7 @@ class _VaultListScreenState extends ConsumerState<VaultListScreen> {
     final secretsLocked = ref.watch(secretsLockProvider);
     final theme = Theme.of(context);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('All Secrets'),
-        actions: [
-          IconButton(
-            icon: Icon(
-              secretsLocked ? Icons.lock : Icons.lock_open,
-              color: secretsLocked ? Colors.red : null,
-            ),
-            tooltip: secretsLocked ? 'Unlock secrets' : 'Lock secrets',
-            onPressed: () =>
-                ref.read(secretsLockProvider.notifier).toggle(),
-          ),
-          IconButton(
-            icon: const Icon(Icons.lock),
-            tooltip: 'Lock vault',
-            onPressed: () => ref.read(authStateProvider.notifier).lock(),
-          ),
-        ],
-      ),
-      body: Stack(
+    final body = Stack(
         children: [
           Column(
             children: [
@@ -198,7 +179,36 @@ class _VaultListScreenState extends ConsumerState<VaultListScreen> {
               ),
             ),
         ],
+      );
+
+    if (widget.embedded) {
+      return Scaffold(
+        body: body,
+        floatingActionButton: secretsLocked ? null : _buildSpeedDial(context),
+      );
+    }
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('All Secrets'),
+        actions: [
+          IconButton(
+            icon: Icon(
+              secretsLocked ? Icons.lock : Icons.lock_open,
+              color: secretsLocked ? Colors.red : null,
+            ),
+            tooltip: secretsLocked ? 'Unlock secrets' : 'Lock secrets',
+            onPressed: () =>
+                ref.read(secretsLockProvider.notifier).toggle(),
+          ),
+          IconButton(
+            icon: const Icon(Icons.lock),
+            tooltip: 'Lock vault',
+            onPressed: () => ref.read(authStateProvider.notifier).lock(),
+          ),
+        ],
       ),
+      body: body,
       floatingActionButton: secretsLocked ? null : _buildSpeedDial(context),
     );
   }

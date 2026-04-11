@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.1.0 — Document Builder
+- AI-powered Document Builder with split-pane .docx editor and LLM chat
+- Real-time document editing: AI directly inserts, replaces, and deletes content at the right location
+- Structured edit commands (insert_after, insert_before, replace, delete, append)
+- Undo/redo support for all AI edits (50-state history)
+- Activity timeseries charts on the dashboard (daily activity, CRUD, security, AI/MCP, infrastructure)
+- Audit log RAG vectorization for semantic search of audit events
+
+## v1.0.0 — Fresh Release
+- All previous features consolidated under v1.0.0
+- Sidebar navigation with customizable nav items
+
 ## v1.2.1 — Streaming Responses
 - LLM responses now stream in real-time with a typing effect
 - Both Ollama and Claude support streaming

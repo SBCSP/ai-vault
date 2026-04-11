@@ -8,8 +8,7 @@ import '../providers/ai_provider.dart';
 import '../providers/chat_history_provider.dart';
 import '../providers/embedding_provider.dart';
 import '../providers/secrets_lock_provider.dart';
-import '../screens/chat_history_screen.dart';
-import '../screens/chat_screen.dart';
+import '../providers/shell_navigation_provider.dart';
 import '../services/ai_service.dart';
 import 'markdown_response.dart';
 
@@ -284,11 +283,7 @@ class _AiChatWidgetState extends ConsumerState<AiChatWidget> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     IconButton(
-                      onPressed: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => const ChatHistoryScreen()),
-                      ),
+                      onPressed: () => ref.read(shellNavigationProvider.notifier).state = 6, // History
                       icon: const Icon(Icons.history, size: 18),
                       tooltip: 'Chat History',
                       visualDensity: VisualDensity.compact,
@@ -297,11 +292,7 @@ class _AiChatWidgetState extends ConsumerState<AiChatWidget> {
                       ),
                     ),
                     IconButton(
-                      onPressed: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => const ChatScreen()),
-                      ),
+                      onPressed: () => ref.read(shellNavigationProvider.notifier).state = 1, // AI Chat
                       icon: const Icon(Icons.open_in_full, size: 18),
                       tooltip: 'Focus mode',
                       visualDensity: VisualDensity.compact,
@@ -417,11 +408,7 @@ class _AiChatWidgetState extends ConsumerState<AiChatWidget> {
               if (!hasMessages) ...[
                 const SizedBox(width: 4),
                 IconButton(
-                  onPressed: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (_) => const ChatScreen()),
-                  ),
+                  onPressed: () => ref.read(shellNavigationProvider.notifier).state = 1, // AI Chat
                   icon: const Icon(Icons.open_in_full, size: 18),
                   tooltip: 'Focus mode',
                   style: IconButton.styleFrom(
