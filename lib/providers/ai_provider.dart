@@ -17,6 +17,7 @@ import '../services/mcp_service.dart';
 import 'audit_provider.dart';
 import 'embedding_provider.dart';
 import 'ideas_provider.dart';
+import 'linear_provider.dart';
 import 'mcp_provider.dart';
 import 'notes_provider.dart';
 import 'secrets_lock_provider.dart';
@@ -369,6 +370,25 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
         // RAG failed — fall back to full context silently
       }
 
+      // --- Linear issues context ---
+      String linearContext = '';
+      try {
+        final linearState = _ref.read(linearProvider);
+        if (linearState.isConnected && linearState.issues.isNotEmpty) {
+          final activeIssues = linearState.activeIssues;
+          if (activeIssues.isNotEmpty) {
+            final buf = StringBuffer('\n\nLINEAR ISSUES (active, ${activeIssues.length} total):\n');
+            for (final issue in activeIssues.take(30)) {
+              buf.writeln(issue.chatContext);
+              buf.writeln('---');
+            }
+            linearContext = buf.toString();
+          }
+        }
+      } catch (_) {
+        // Linear context is optional — ignore errors
+      }
+
       // --- MCP tool-calling path ---
       final mcpState = _ref.read(mcpProvider);
       final mcpTools = mcpState.availableTools;
@@ -395,14 +415,15 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
             ? ragIdeas
             : ideaList;
         final vaultContext = aiService.buildVaultContext(
-          contextEntries,
-          contextNotes,
-          ideas: contextIdeas,
-          documentChunks: ragChunks,
-          documentTitles: ragDocumentTitles,
-          chatSessions: ragChatSessions,
-          wikiPages: ragWikiPages,
-        );
+              contextEntries,
+              contextNotes,
+              ideas: contextIdeas,
+              documentChunks: ragChunks,
+              documentTitles: ragDocumentTitles,
+              chatSessions: ragChatSessions,
+              wikiPages: ragWikiPages,
+            ) +
+            linearContext;
 
         final ollamaTools = mcpService.getOllamaToolsJson();
 
@@ -595,14 +616,15 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
             ? ragIdeas
             : ideaList;
         final vaultContext = aiService.buildVaultContext(
-          [], // Never send secrets to cloud LLM
-          contextNotes,
-          ideas: contextIdeas,
-          documentChunks: ragChunks,
-          documentTitles: ragDocumentTitles,
-          chatSessions: ragChatSessions,
-          wikiPages: ragWikiPages,
-        );
+              [], // Never send secrets to cloud LLM
+              contextNotes,
+              ideas: contextIdeas,
+              documentChunks: ragChunks,
+              documentTitles: ragDocumentTitles,
+              chatSessions: ragChatSessions,
+              wikiPages: ragWikiPages,
+            ) +
+            linearContext;
 
         // Add placeholder assistant message for streaming
         final placeholderMessage = ChatMessage(
@@ -684,14 +706,15 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
             ? ragIdeas
             : ideaList;
         final vaultContext = aiService.buildVaultContext(
-          contextEntries,
-          contextNotes,
-          ideas: contextIdeas,
-          documentChunks: ragChunks,
-          documentTitles: ragDocumentTitles,
-          chatSessions: ragChatSessions,
-          wikiPages: ragWikiPages,
-        );
+              contextEntries,
+              contextNotes,
+              ideas: contextIdeas,
+              documentChunks: ragChunks,
+              documentTitles: ragDocumentTitles,
+              chatSessions: ragChatSessions,
+              wikiPages: ragWikiPages,
+            ) +
+            linearContext;
 
         final messages = <Map<String, String>>[
           {'role': 'system', 'content': '${AiService.systemPrompt}\n\n$vaultContext'},

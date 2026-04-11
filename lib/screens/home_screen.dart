@@ -12,6 +12,7 @@ import '../providers/notes_provider.dart';
 import '../providers/secrets_lock_provider.dart';
 import '../providers/server_provider.dart';
 import '../providers/embedding_provider.dart';
+import '../providers/linear_provider.dart';
 import '../providers/vault_provider.dart';
 import '../providers/version_provider.dart';
 import '../services/ai_service.dart';
@@ -21,6 +22,7 @@ import 'documents_list_screen.dart';
 import 'entry_form_screen.dart';
 import 'idea_form_screen.dart';
 import 'ideas_list_screen.dart';
+import 'linear_tasks_screen.dart';
 import 'note_form_screen.dart';
 import 'notes_list_screen.dart';
 import 'ollama_screen.dart';
@@ -61,6 +63,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     final chatsAsync = ref.watch(chatSessionsProvider);
     final serversAsync = ref.watch(serversProvider);
     final aiService = ref.watch(aiServiceProvider);
+    final linearState = ref.watch(linearProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -148,6 +151,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                           chatCount: chatCount,
                           serverCount: serverCount,
                           aiService: aiService,
+                          linearIssueCount: linearState.issues.length,
+                          linearConnected: linearState.isConnected,
                         ),
                         const SizedBox(height: 24),
 
@@ -324,6 +329,8 @@ class _StatsRow extends StatefulWidget {
   final int chatCount;
   final int serverCount;
   final dynamic aiService;
+  final int linearIssueCount;
+  final bool linearConnected;
 
   const _StatsRow({
     required this.entries,
@@ -333,6 +340,8 @@ class _StatsRow extends StatefulWidget {
     required this.chatCount,
     required this.serverCount,
     required this.aiService,
+    required this.linearIssueCount,
+    required this.linearConnected,
   });
 
   @override
@@ -480,6 +489,22 @@ class _StatsRowState extends State<_StatsRow> {
                 context,
                 MaterialPageRoute(
                     builder: (_) => const CategoriesScreen()),
+              ),
+            ),
+            _DashboardCard(
+              icon: Icons.linear_scale,
+              iconColor: widget.linearConnected
+                  ? const Color(0xFF5E6AD2)
+                  : Colors.grey,
+              label: 'Tasks',
+              value: widget.linearConnected
+                  ? '${widget.linearIssueCount}'
+                  : '—',
+              subtitle: widget.linearConnected ? 'Linear issues' : 'Not connected',
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => const LinearTasksScreen()),
               ),
             ),
             _OllamaStatusCard(
