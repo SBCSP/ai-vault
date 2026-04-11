@@ -1,0 +1,33 @@
+[package]
+name = "ai_vault_rust"
+version = "0.1.0"
+edition = "2021"
+description = "Rust bridge for AI VaultIO — LanceDB vector storage via flutter_rust_bridge"
+
+[lib]
+# cdylib → macOS/Linux dynamic lib; staticlib → iOS/macOS static link fallback
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+flutter_rust_bridge = "=2.12.0"
+
+# LanceDB and Arrow — keep versions in sync (lancedb 0.14 uses arrow 53)
+# default-features = false disables the "remote" feature which pulls in
+# AWS SDK (requires rustc ≥ 1.91.1). Local Lance file storage still works.
+lancedb    = { version = "0.14", default-features = false }
+arrow-array  = "53"
+arrow-schema = "53"
+
+# Async runtime (FRB v2 manages its own tokio but we still need it for types)
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
+
+# Utilities
+anyhow    = "1"
+once_cell = "1"
+futures   = "0.3"
+
+[profile.release]
+lto           = true   # Link-time optimisation → smaller binary, faster search
+codegen-units = 1
+panic         = "abort"
+opt-level     = 3

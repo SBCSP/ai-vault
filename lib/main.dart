@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -5,9 +6,17 @@ import 'providers/auth_provider.dart';
 import 'providers/lock_timeout_provider.dart';
 import 'screens/lock_screen.dart';
 import 'screens/shell_screen.dart';
+import 'src/rust/frb_generated.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Initialise the Rust bridge.  If the native dylib is not found (e.g. the
+  // crate hasn't been compiled yet), we continue in SQLite-only mode.
+  try {
+    await RustLib.init();
+  } catch (e) {
+    debugPrint('[LanceDB] Rust bridge unavailable — SQLite fallback active: $e');
+  }
   runApp(const ProviderScope(child: AiVaultApp()));
 }
 

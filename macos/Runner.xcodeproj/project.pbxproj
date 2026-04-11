@@ -235,6 +235,7 @@
 			buildConfigurationList = 33CC10FB2044A3C60003C045 /* Build configuration list for PBXNativeTarget "Runner" */;
 			buildPhases = (
 				04B6F6639A96CD0B45A25C87 /* [CP] Check Pods Manifest.lock */,
+				4B06F7990440AD205FA4D825 /* Build & Embed Rust (LanceDB) */,
 				33CC10E92044A3C60003C045 /* Sources */,
 				33CC10EA2044A3C60003C045 /* Frameworks */,
 				33CC10EB2044A3C60003C045 /* Resources */,
@@ -404,6 +405,26 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "\"$FLUTTER_ROOT\"/packages/flutter_tools/bin/macos_assemble.sh && touch Flutter/ephemeral/tripwire";
+		};
+		4B06F7990440AD205FA4D825 /* Build & Embed Rust (LanceDB) */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/../rust/Cargo.toml",
+			);
+			name = "Build & Embed Rust (LanceDB)";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(BUILT_PRODUCTS_DIR)/$(FRAMEWORKS_FOLDER_PATH)/ai_vault_rust.framework/Versions/A/ai_vault_rust",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e\nexport PATH=\"$HOME/.cargo/bin:$PATH\"\nREPO_ROOT=\"$SRCROOT/..\"\nCARGO_MANIFEST=\"$REPO_ROOT/rust/Cargo.toml\"\n\ncargo build --release --manifest-path \"$CARGO_MANIFEST\"\nRUST_LIB=\"$REPO_ROOT/rust/target/release/libai_vault_rust.dylib\"\n\n# macOS requires a versioned framework layout (not the flat iOS-style bundle):\n#   ai_vault_rust.framework/\n#     Versions/A/ai_vault_rust\n#     Versions/A/Resources/Info.plist\n#     Versions/Current -> A  (symlink)\n#     ai_vault_rust -> Versions/Current/ai_vault_rust  (symlink)\n#     Resources -> Versions/Current/Resources  (symlink)\nDEST_FW=\"$BUILT_PRODUCTS_DIR/$FRAMEWORKS_FOLDER_PATH/ai_vault_rust.framework\"\nrm -rf \"$DEST_FW\"\nmkdir -p \"$DEST_FW/Versions/A/Resources\"\n\ncp \"$RUST_LIB\" \"$DEST_FW/Versions/A/ai_vault_rust\"\ninstall_name_tool -id \"@rpath/ai_vault_rust.framework/Versions/A/ai_vault_rust\" \"$DEST_FW/Versions/A/ai_vault_rust\"\n\n/usr/libexec/PlistBuddy \\\n  -c \"Add :CFBundleExecutable string ai_vault_rust\" \\\n  -c \"Add :CFBundleIdentifier string io.aivault.rust\" \\\n  -c \"Add :CFBundleName string ai_vault_rust\" \\\n  -c \"Add :CFBundlePackageType string FMWK\" \\\n  -c \"Add :CFBundleShortVersionString string 1.0\" \\\n  -c \"Add :CFBundleVersion string 1\" \\\n  \"$DEST_FW/Versions/A/Resources/Info.plist\"\n\nln -sfh A \"$DEST_FW/Versions/Current\"\nln -sfh Versions/Current/ai_vault_rust \"$DEST_FW/ai_vault_rust\"\nln -sfh Versions/Current/Resources \"$DEST_FW/Resources\"\n";
 		};
 		85D3F8A770EDD7DEC03AA0C2 /* [CP] Embed Pods Frameworks */ = {
 			isa = PBXShellScriptBuildPhase;

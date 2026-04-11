@@ -14,6 +14,7 @@ import '../models/note.dart' as model;
 import '../models/vault_entry.dart' as model;
 import '../services/document_service.dart';
 import '../services/embedding_service.dart';
+import '../services/lance_db_service.dart';
 import 'ai_provider.dart';
 import 'documents_provider.dart';
 import 'ideas_provider.dart';
@@ -113,10 +114,123 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
   String get _modelName => _ref.read(embeddingModelProvider);
 
   Future<void> refreshStats() async {
+    // Prefer LanceDB count when available
+    if (LanceDbService.isAvailable) {
+      try {
+        final stats = await LanceDbService.getStats();
+        if (mounted) {
+          state = state.copyWith(indexedCount: stats.totalEmbeddings.toInt());
+        }
+        return;
+      } catch (_) {
+        // fall through to SQLite
+      }
+    }
     final count = await _db.countEmbeddings();
     if (mounted) {
       state = state.copyWith(indexedCount: count);
     }
+  }
+
+  // ── LanceDB helpers ─────────────────────────────────────────────────────
+
+  /// Returns true if this sourceId is already indexed with the same hash+model.
+  Future<bool> _isAlreadyIndexed(String sourceId, String hash) async {
+    if (LanceDbService.isAvailable) {
+      try {
+        final entry = await LanceDbService.getSourceHash(sourceId);
+        return entry != null &&
+            entry.contentHash == hash &&
+            entry.modelName == _modelName;
+      } catch (_) {}
+    }
+    return false;
+  }
+
+  /// Dual-write: store in LanceDB when available, always also write to SQLite.
+  Future<void> _upsertVector({
+    required String sqliteId,
+    required String sourceId,
+    required String sourceType,
+    required String hash,
+    required List<double> vector,
+  }) async {
+    // LanceDB — primary store when bridge is compiled
+    if (LanceDbService.isAvailable) {
+      try {
+        await LanceDbService.upsertEmbedding(
+          sourceId: sourceId,
+          sourceType: sourceType,
+          modelName: _modelName,
+          contentHash: hash,
+          vector: vector,
+        );
+        await refreshStats();
+        return; // Skip SQLite write — LanceDB is the authoritative store
+      } catch (_) {
+        // Bridge call failed; fall through to SQLite
+      }
+    }
+
+    // SQLite fallback
+    await _db.upsertEmbedding(EmbeddingsCompanion(
+      id: Value(sqliteId),
+      sourceId: Value(sourceId),
+      sourceType: Value(sourceType),
+      embedding: Value(jsonEncode(vector)),
+      modelName: Value(_modelName),
+      contentHash: Value(hash),
+      createdAt: Value(DateTime.now()),
+    ));
+    await refreshStats();
+  }
+
+  // ── RAG search (ANN via LanceDB or O(n) SQLite fallback) ────────────────
+
+  /// Semantic similarity search over all indexed embeddings.
+  /// Returns source IDs+types sorted by score descending.
+  Future<List<({String sourceId, String sourceType, double score})>> ragSearch(
+    List<double> queryVector, {
+    int topK = 10,
+    double threshold = 0.3,
+  }) async {
+    if (LanceDbService.isAvailable) {
+      try {
+        final results = await LanceDbService.searchSimilar(
+          queryVector: queryVector,
+          topK: topK,
+        );
+        return results
+            .where((r) => r.similarity >= threshold)
+            .map((r) => (
+                  sourceId: r.sourceId,
+                  sourceType: r.sourceType,
+                  score: r.similarity,
+                ))
+            .toList();
+      } catch (_) {
+        // Fall through to SQLite scan
+      }
+    }
+
+    // SQLite O(n) cosine similarity fallback
+    final allEmbeddings = await _db.getAllEmbeddings();
+    final scored = <({String sourceId, String sourceType, double score})>[];
+    for (final emb in allEmbeddings) {
+      final vector = (jsonDecode(emb.embedding) as List<dynamic>)
+          .map((e) => (e as num).toDouble())
+          .toList();
+      final score = EmbeddingService.cosineSimilarity(queryVector, vector);
+      if (score >= threshold) {
+        scored.add((
+          sourceId: emb.sourceId,
+          sourceType: emb.sourceType,
+          score: score,
+        ));
+      }
+    }
+    scored.sort((a, b) => b.score.compareTo(a.score));
+    return scored.take(topK).toList();
   }
 
   /// Index a single vault entry. Skips if content hash is unchanged.
@@ -124,7 +238,9 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
     final text = EmbeddingService.buildEntryText(entry);
     final hash = EmbeddingService.computeContentHash(text);
 
-    // Check if already indexed with same hash
+    if (await _isAlreadyIndexed(entry.id, hash)) return;
+
+    // SQLite existing id (needed for SQLite upsert path)
     final existing = await _db.getEmbeddingBySourceId(entry.id);
     if (existing != null &&
         existing.contentHash == hash &&
@@ -135,23 +251,21 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
     final vector = await _service.generateEmbedding(text);
     if (vector == null) return;
 
-    await _db.upsertEmbedding(EmbeddingsCompanion(
-      id: Value(existing?.id ?? _uuid.v4()),
-      sourceId: Value(entry.id),
-      sourceType: const Value('vault_entry'),
-      embedding: Value(jsonEncode(vector)),
-      modelName: Value(_modelName),
-      contentHash: Value(hash),
-      createdAt: Value(DateTime.now()),
-    ));
-
-    await refreshStats();
+    await _upsertVector(
+      sqliteId: existing?.id ?? _uuid.v4(),
+      sourceId: entry.id,
+      sourceType: 'vault_entry',
+      hash: hash,
+      vector: vector,
+    );
   }
 
   /// Index a single note. Skips if content hash is unchanged.
   Future<void> indexNote(model.Note note) async {
     final text = EmbeddingService.buildNoteText(note);
     final hash = EmbeddingService.computeContentHash(text);
+
+    if (await _isAlreadyIndexed(note.id, hash)) return;
 
     final existing = await _db.getEmbeddingBySourceId(note.id);
     if (existing != null &&
@@ -163,27 +277,29 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
     final vector = await _service.generateEmbedding(text);
     if (vector == null) return;
 
-    await _db.upsertEmbedding(EmbeddingsCompanion(
-      id: Value(existing?.id ?? _uuid.v4()),
-      sourceId: Value(note.id),
-      sourceType: const Value('note'),
-      embedding: Value(jsonEncode(vector)),
-      modelName: Value(_modelName),
-      contentHash: Value(hash),
-      createdAt: Value(DateTime.now()),
-    ));
-
-    await refreshStats();
+    await _upsertVector(
+      sqliteId: existing?.id ?? _uuid.v4(),
+      sourceId: note.id,
+      sourceType: 'note',
+      hash: hash,
+      vector: vector,
+    );
   }
 
   /// Remove embedding when a vault entry is deleted.
   Future<void> removeEntry(String id) async {
+    if (LanceDbService.isAvailable) {
+      try { await LanceDbService.deleteBySource(id); } catch (_) {}
+    }
     await _db.deleteEmbeddingBySourceId(id);
     await refreshStats();
   }
 
   /// Remove embedding when a note is deleted.
   Future<void> removeNote(String id) async {
+    if (LanceDbService.isAvailable) {
+      try { await LanceDbService.deleteBySource(id); } catch (_) {}
+    }
     await _db.deleteEmbeddingBySourceId(id);
     await refreshStats();
   }
@@ -192,6 +308,8 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
   Future<void> indexIdea(model.Idea idea) async {
     final text = EmbeddingService.buildIdeaText(idea);
     final hash = EmbeddingService.computeContentHash(text);
+
+    if (await _isAlreadyIndexed(idea.id, hash)) return;
 
     final existing = await _db.getEmbeddingBySourceId(idea.id);
     if (existing != null &&
@@ -203,21 +321,20 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
     final vector = await _service.generateEmbedding(text);
     if (vector == null) return;
 
-    await _db.upsertEmbedding(EmbeddingsCompanion(
-      id: Value(existing?.id ?? _uuid.v4()),
-      sourceId: Value(idea.id),
-      sourceType: const Value('idea'),
-      embedding: Value(jsonEncode(vector)),
-      modelName: Value(_modelName),
-      contentHash: Value(hash),
-      createdAt: Value(DateTime.now()),
-    ));
-
-    await refreshStats();
+    await _upsertVector(
+      sqliteId: existing?.id ?? _uuid.v4(),
+      sourceId: idea.id,
+      sourceType: 'idea',
+      hash: hash,
+      vector: vector,
+    );
   }
 
   /// Remove embedding when an idea is deleted.
   Future<void> removeIdea(String id) async {
+    if (LanceDbService.isAvailable) {
+      try { await LanceDbService.deleteBySource(id); } catch (_) {}
+    }
     await _db.deleteEmbeddingBySourceId(id);
     await refreshStats();
   }
@@ -306,6 +423,8 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
         EmbeddingService.buildChatSessionText(session.title, msgMaps);
     final hash = EmbeddingService.computeContentHash(text);
 
+    if (await _isAlreadyIndexed(session.id, hash)) return;
+
     final existing = await _db.getEmbeddingBySourceId(session.id);
     if (existing != null &&
         existing.contentHash == hash &&
@@ -316,21 +435,20 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
     final vector = await _service.generateEmbedding(text);
     if (vector == null) return;
 
-    await _db.upsertEmbedding(EmbeddingsCompanion(
-      id: Value(existing?.id ?? _uuid.v4()),
-      sourceId: Value(session.id),
-      sourceType: const Value('chat_session'),
-      embedding: Value(jsonEncode(vector)),
-      modelName: Value(_modelName),
-      contentHash: Value(hash),
-      createdAt: Value(DateTime.now()),
-    ));
-
-    await refreshStats();
+    await _upsertVector(
+      sqliteId: existing?.id ?? _uuid.v4(),
+      sourceId: session.id,
+      sourceType: 'chat_session',
+      hash: hash,
+      vector: vector,
+    );
   }
 
   /// Remove embedding for a deleted chat session.
   Future<void> removeChatSession(String id) async {
+    if (LanceDbService.isAvailable) {
+      try { await LanceDbService.deleteBySource(id); } catch (_) {}
+    }
     await _db.deleteEmbeddingBySourceId(id);
     await refreshStats();
   }
@@ -347,6 +465,8 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
     );
     final hash = EmbeddingService.computeContentHash(text);
 
+    if (await _isAlreadyIndexed(sourceId, hash)) return;
+
     final existing = await _db.getEmbeddingBySourceId(sourceId);
     if (existing != null &&
         existing.contentHash == hash &&
@@ -357,17 +477,13 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
     final vector = await _service.generateEmbedding(text);
     if (vector == null) return;
 
-    await _db.upsertEmbedding(EmbeddingsCompanion(
-      id: Value(existing?.id ?? _uuid.v4()),
-      sourceId: Value(sourceId),
-      sourceType: const Value('audit_log'),
-      embedding: Value(jsonEncode(vector)),
-      modelName: Value(_modelName),
-      contentHash: Value(hash),
-      createdAt: Value(DateTime.now()),
-    ));
-
-    await refreshStats();
+    await _upsertVector(
+      sqliteId: existing?.id ?? _uuid.v4(),
+      sourceId: sourceId,
+      sourceType: 'audit_log',
+      hash: hash,
+      vector: vector,
+    );
   }
 
   /// Batch-index all un-indexed audit logs.
@@ -405,6 +521,7 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
             final hash = EmbeddingService.computeContentHash('$wikiVersion:$text');
 
             final existing = await _db.getEmbeddingBySourceId(sourceId);
+            if (await _isAlreadyIndexed(sourceId, hash)) continue;
             if (existing != null &&
                 existing.contentHash == hash &&
                 existing.modelName == _modelName) {
@@ -414,15 +531,13 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
             final vector = await _service.generateEmbedding(text);
             if (vector == null) continue;
 
-            await _db.upsertEmbedding(EmbeddingsCompanion(
-              id: Value(existing?.id ?? _uuid.v4()),
-              sourceId: Value(sourceId),
-              sourceType: const Value('wiki_page'),
-              embedding: Value(jsonEncode(vector)),
-              modelName: Value(_modelName),
-              contentHash: Value(hash),
-              createdAt: Value(DateTime.now()),
-            ));
+            await _upsertVector(
+              sqliteId: existing?.id ?? _uuid.v4(),
+              sourceId: sourceId,
+              sourceType: 'wiki_page',
+              hash: hash,
+              vector: vector,
+            );
           } catch (_) {
             // Skip pages that fail to load
           }
@@ -479,6 +594,9 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
     );
 
     // Clear all existing embeddings and document chunks
+    if (LanceDbService.isAvailable) {
+      try { await LanceDbService.deleteAll(); } catch (_) {}
+    }
     await _db.deleteAllEmbeddings();
     for (final doc in docsList) {
       await _db.deleteChunksByDocumentId(doc.id);
