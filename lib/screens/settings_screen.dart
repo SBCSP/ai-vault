@@ -7,11 +7,13 @@ import '../providers/api_server_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/aws_provider.dart';
 import '../providers/category_provider.dart';
+import '../providers/linear_provider.dart';
 import '../providers/lock_timeout_provider.dart';
 import '../providers/mcp_provider.dart';
 import '../services/claude_api_service.dart';
 import 'audit_log_screen.dart';
 import 'aws_settings_screen.dart';
+import 'linear_settings_screen.dart';
 import 'mcp_servers_screen.dart';
 import 'ollama_screen.dart';
 import 'server_management_screen.dart';
@@ -118,6 +120,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 _buildMcpCard(theme, ref),
                 const SizedBox(height: 16),
                 _buildAwsCard(theme, ref),
+                const SizedBox(height: 16),
+                _buildLinearCard(theme, ref),
                 const SizedBox(height: 16),
                 // Server Management card
                 Card(
@@ -560,6 +564,83 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       SizedBox(width: 3),
                       Text(
                         'SSO',
+                        style: TextStyle(
+                          color: Colors.green,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              const SizedBox(width: 8),
+              Icon(
+                Icons.arrow_forward_ios,
+                size: 16,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLinearCard(ThemeData theme, WidgetRef ref) {
+    final linear = ref.watch(linearProvider);
+    final isConnected = linear.isConnected;
+
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const LinearSettingsScreen()),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              const Icon(Icons.linear_scale, color: Color(0xFF5E6AD2)),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Linear',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      isConnected
+                          ? 'Connected — ${linear.issues.length} issues synced'
+                          : 'Connect your Linear workspace',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: isConnected
+                            ? Colors.green.shade700
+                            : theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (isConnected)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.check_circle, size: 10, color: Colors.green),
+                      SizedBox(width: 3),
+                      Text(
+                        'OAuth',
                         style: TextStyle(
                           color: Colors.green,
                           fontSize: 10,

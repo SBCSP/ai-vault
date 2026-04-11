@@ -108,4 +108,10 @@ abstract class AuditAction {
   static const String mcpConnectionFailed = 'mcp.connection_failed';
   static const String mcpToolCalled = 'mcp.tool_called';
   static const String mcpToolFailed = 'mcp.tool_failed';
+
+  // Linear
+  static const String linearConnected = 'linear.connected';
+  static const String linearDisconnected = 'linear.disconnected';
+  static const String linearSynced = 'linear.synced';
+  static const String linearIssueCreated = 'linear.issue_created';
 }
