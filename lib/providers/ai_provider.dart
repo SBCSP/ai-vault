@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,7 +11,6 @@ import '../models/note.dart';
 import '../models/vault_entry.dart';
 import '../services/ai_service.dart';
 import '../services/claude_api_service.dart';
-import '../services/embedding_service.dart';
 import '../services/mcp_service.dart';
 import 'audit_provider.dart';
 import 'embedding_provider.dart';
@@ -251,32 +249,12 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
             await embeddingService.generateEmbedding(query);
 
         if (queryVector != null) {
-          final allEmbeddings = await database.getAllEmbeddings();
+          // Use LanceDB ANN search when available, else SQLite O(n) cosine scan
+          final topK = await _ref
+              .read(embeddingIndexProvider.notifier)
+              .ragSearch(queryVector, topK: 10, threshold: 0.3);
 
-          if (allEmbeddings.isNotEmpty) {
-            // Score each embedding against the query
-            final scored = <({String sourceId, String sourceType, double score})>[];
-            for (final emb in allEmbeddings) {
-              final vector = (jsonDecode(emb.embedding) as List<dynamic>)
-                  .map((e) => (e as num).toDouble())
-                  .toList();
-              final score =
-                  EmbeddingService.cosineSimilarity(queryVector, vector);
-              scored.add((
-                sourceId: emb.sourceId,
-                sourceType: emb.sourceType,
-                score: score,
-              ));
-            }
-
-            // Sort by score descending, filter by minimum threshold, take top 10
-            scored.sort((a, b) => b.score.compareTo(a.score));
-            final topK = scored
-                .where((s) => s.score >= 0.3)
-                .take(10)
-                .toList();
-
-            if (topK.isNotEmpty) {
+          if (topK.isNotEmpty) {
               ragUsed = true;
 
               final entryIds = secretsLocked
@@ -381,7 +359,6 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
                   }
                 }
               }
-            }
           }
         }
       } catch (_) {
@@ -433,15 +410,16 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
             ? ragIdeas
             : ideaList;
         final vaultContext = aiService.buildVaultContext(
-          contextEntries,
-          contextNotes,
-          ideas: contextIdeas,
-          documentChunks: ragChunks,
-          documentTitles: ragDocumentTitles,
-          chatSessions: ragChatSessions,
-          wikiPages: ragWikiPages,
-          auditLogs: ragAuditLogs,
-        );
+              contextEntries,
+              contextNotes,
+              ideas: contextIdeas,
+              documentChunks: ragChunks,
+              documentTitles: ragDocumentTitles,
+              chatSessions: ragChatSessions,
+              wikiPages: ragWikiPages,
+              auditLogs: ragAuditLogs,
+            ) +
+            linearContext;
 
         final ollamaTools = mcpService.getOllamaToolsJson();
 
@@ -635,15 +613,16 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
             ? ragIdeas
             : ideaList;
         final vaultContext = aiService.buildVaultContext(
-          [], // Never send secrets to cloud LLM
-          contextNotes,
-          ideas: contextIdeas,
-          documentChunks: ragChunks,
-          documentTitles: ragDocumentTitles,
-          chatSessions: ragChatSessions,
-          wikiPages: ragWikiPages,
-          auditLogs: ragAuditLogs,
-        );
+              [], // Never send secrets to cloud LLM
+              contextNotes,
+              ideas: contextIdeas,
+              documentChunks: ragChunks,
+              documentTitles: ragDocumentTitles,
+              chatSessions: ragChatSessions,
+              wikiPages: ragWikiPages,
+              auditLogs: ragAuditLogs,
+            ) +
+            linearContext;
 
         // Add placeholder assistant message for streaming
         final placeholderMessage = ChatMessage(
@@ -726,15 +705,16 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
             ? ragIdeas
             : ideaList;
         final vaultContext = aiService.buildVaultContext(
-          contextEntries,
-          contextNotes,
-          ideas: contextIdeas,
-          documentChunks: ragChunks,
-          documentTitles: ragDocumentTitles,
-          chatSessions: ragChatSessions,
-          wikiPages: ragWikiPages,
-          auditLogs: ragAuditLogs,
-        );
+              contextEntries,
+              contextNotes,
+              ideas: contextIdeas,
+              documentChunks: ragChunks,
+              documentTitles: ragDocumentTitles,
+              chatSessions: ragChatSessions,
+              wikiPages: ragWikiPages,
+              auditLogs: ragAuditLogs,
+            ) +
+            linearContext;
 
         final messages = <Map<String, String>>[
           {'role': 'system', 'content': '${AiService.systemPrompt}\n\n$vaultContext'},

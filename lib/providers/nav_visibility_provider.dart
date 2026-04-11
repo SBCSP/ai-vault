@@ -22,12 +22,13 @@ const allNavDestinations = [
   NavDestination(id: 2, label: 'Secrets'),
   NavDestination(id: 3, label: 'Notes'),
   NavDestination(id: 4, label: 'Ideas'),
-  NavDestination(id: 5, label: 'Documents'),
+  NavDestination(id: 5, label: 'Files'),
   NavDestination(id: 6, label: 'Chat History'),
   NavDestination(id: 7, label: 'Servers'),
   NavDestination(id: 8, label: 'Wiki'),
   NavDestination(id: 9, label: 'Settings', isSystem: true),
   NavDestination(id: 10, label: 'Doc Builder'),
+  NavDestination(id: 11, label: 'Linear'),
 ];
 
 const _prefsKey = 'nav_hidden_ids';

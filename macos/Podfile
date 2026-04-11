@@ -39,4 +39,39 @@ post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_macos_build_settings(target)
   end
+
+  # ── Rust / LanceDB build phase ─────────────────────────────────────────────
+  # Compile the Rust crate and embed the dylib in the macOS app bundle.
+  # Added once to Runner.xcodeproj; subsequent pod installs are no-ops.
+  require 'xcodeproj'
+  project_path = File.expand_path('Runner.xcodeproj', __dir__)
+  project = Xcodeproj::Project.open(project_path)
+
+  runner = project.targets.find { |t| t.name == 'Runner' }
+  phase_name = 'Build & Embed Rust (LanceDB)'
+
+  unless runner.shell_script_build_phases.any? { |p| p.name == phase_name }
+    phase = runner.new_shell_script_build_phase(phase_name)
+    # SRCROOT = macos/ directory; .. goes to the Flutter project root.
+    # cargo build (no --target) outputs to rust/target/release/, matching
+    # FRB's kDefaultExternalLibraryLoaderConfig ioDirectory.
+    phase.shell_script = <<~'BASH'
+      set -e
+      export PATH="$HOME/.cargo/bin:$PATH"
+      REPO_ROOT="$SRCROOT/.."
+      CARGO_MANIFEST="$REPO_ROOT/rust/Cargo.toml"
+
+      # Always build in release mode.
+      # FRB's ioDirectory (for flutter run) points to rust/target/release/,
+      # so we always produce a release dylib regardless of Flutter build config.
+      cargo build --release --manifest-path "$CARGO_MANIFEST"
+      RUST_LIB="$REPO_ROOT/rust/target/release/libai_vault_rust.dylib"
+
+      DEST="$BUILT_PRODUCTS_DIR/$FRAMEWORKS_FOLDER_PATH/libai_vault_rust.dylib"
+      cp "$RUST_LIB" "$DEST"
+      install_name_tool -id "@rpath/libai_vault_rust.dylib" "$DEST"
+    BASH
+    runner.build_phases.move(phase, 0)
+    project.save
+  end
 end

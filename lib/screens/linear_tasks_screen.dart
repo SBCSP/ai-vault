@@ -7,7 +7,8 @@ import '../providers/linear_provider.dart';
 import 'linear_settings_screen.dart';
 
 class LinearTasksScreen extends ConsumerStatefulWidget {
-  const LinearTasksScreen({super.key});
+  final bool embedded;
+  const LinearTasksScreen({super.key, this.embedded = false});
 
   @override
   ConsumerState<LinearTasksScreen> createState() => _LinearTasksScreenState();
