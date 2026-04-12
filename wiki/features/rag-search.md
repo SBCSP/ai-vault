@@ -7,13 +7,13 @@ RAG (Retrieval-Augmented Generation) is a technique that enhances AI responses b
 ## How AI VaultIO Uses RAG
 
 ```
-Query -> Embed query -> Compare against all embeddings -> Top-K results -> LLM context
+Query -> Embed query -> ANN search (LanceDB) -> Top-K results -> LLM context
 ```
 
 ### Step-by-Step
 
 1. **Embedding** — Your question is converted to a numerical vector using Ollama's embedding model
-2. **Similarity search** — The query vector is compared against all stored embeddings using cosine similarity
+2. **ANN search** — The query vector is compared against all stored embeddings in LanceDB using approximate nearest-neighbor search
 3. **Top-K selection** — The most relevant items (score >= 0.3) are selected, up to 10 items
 4. **Context building** — Selected secrets, notes, ideas, document chunks, and past chats are assembled into the LLM context
 5. **Generation** — The LLM answers your question using this focused context
@@ -27,6 +27,16 @@ Query -> Embed query -> Compare against all embeddings -> Top-K results -> LLM c
 - **Chat sessions** — Saved and indexed conversations
 - **Audit logs** — Action, target, details, timestamp
 - **Wiki pages** — Built-in app documentation
+
+## Vector Storage
+
+All embeddings are stored exclusively in **LanceDB**, a Rust-native vector database compiled directly into the app. LanceDB provides:
+
+- Fast ANN (approximate nearest-neighbor) search
+- On-disk persistence in your Application Support directory
+- No external server required
+
+The LanceDB management screen (sidebar → LanceDB) shows embedding counts, vector dimensions, index status, and provides controls to build or rebuild the index.
 
 ## RAG Source Badges
 

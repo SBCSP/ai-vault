@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.3.1 — LanceDB Exclusive + Enterprise UI
+- Full enterprise UI revamp: 220px dark sidebar (GitHub-inspired), Inter font, compact desktop density, border-over-shadow design
+- Design token system: AppColors, AppSpacing, AppTheme with full Material 3 overrides
+- Grouped sidebar navigation with section labels and hover states
+- Smooth 160ms fade transitions between sections
+- LanceDB is now the exclusive vector store — SQLite embedding fallback removed
+- New LanceDB management screen in the sidebar (metrics, dimension config, index controls)
+- Vector Database card removed from Settings
+- Renamed "Documents" nav item to "Files"
+- Linear integration added as a first-class sidebar item
+
 ## v1.1.0 — Document Builder
 - AI-powered Document Builder with split-pane .docx editor and LLM chat
 - Real-time document editing: AI directly inserts, replaces, and deletes content at the right location

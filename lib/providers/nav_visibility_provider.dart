@@ -29,6 +29,7 @@ const allNavDestinations = [
   NavDestination(id: 9, label: 'Settings', isSystem: true),
   NavDestination(id: 10, label: 'Doc Builder'),
   NavDestination(id: 11, label: 'Linear'),
+  NavDestination(id: 12, label: 'LanceDB'),
 ];
 
 const _prefsKey = 'nav_hidden_ids';

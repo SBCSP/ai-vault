@@ -1,6 +1,7 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import 'theme/app_theme.dart';
 
 import 'providers/auth_provider.dart';
 import 'providers/lock_timeout_provider.dart';
@@ -53,16 +54,8 @@ class _AiVaultAppState extends ConsumerState<AiVaultApp> {
         title: 'AI VaultIO',
         navigatorKey: _navigatorKey,
         debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          colorSchemeSeed: Colors.indigo,
-          useMaterial3: true,
-          brightness: Brightness.light,
-        ),
-        darkTheme: ThemeData(
-          colorSchemeSeed: Colors.indigo,
-          useMaterial3: true,
-          brightness: Brightness.dark,
-        ),
+        theme: AppTheme.light(),
+        darkTheme: AppTheme.dark(),
         themeMode: ThemeMode.system,
         home: authState.status == AuthStatus.unlocked
             ? const ShellScreen()

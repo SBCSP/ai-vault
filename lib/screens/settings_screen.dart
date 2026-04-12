@@ -9,14 +9,12 @@ import '../providers/aws_provider.dart';
 import '../providers/category_provider.dart';
 import '../providers/linear_provider.dart';
 import '../providers/lock_timeout_provider.dart';
-import '../providers/vector_db_provider.dart';
 import '../providers/mcp_provider.dart';
 import '../services/claude_api_service.dart';
 import 'audit_log_screen.dart';
 import 'aws_settings_screen.dart';
 import 'linear_settings_screen.dart';
 import 'mcp_servers_screen.dart';
-import 'vector_db_settings_screen.dart';
 import 'ollama_screen.dart';
 import 'server_management_screen.dart';
 import 'wiki_screen.dart';
@@ -124,8 +122,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 _buildAwsCard(theme, ref),
                 const SizedBox(height: 16),
                 _buildLinearCard(theme, ref),
-                const SizedBox(height: 16),
-                _buildVectorDbCard(theme, ref),
                 const SizedBox(height: 16),
                 // Server Management card
                 Card(
@@ -667,88 +663,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
-  Widget _buildVectorDbCard(ThemeData theme, WidgetRef ref) {
-    final vectorDb = ref.watch(vectorDbProvider);
-    final isActive = vectorDb.isInitialized;
-    final count = vectorDb.stats?.totalEmbeddings ?? 0;
-
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: () => Navigator.push(
-          context,
-          MaterialPageRoute(
-              builder: (_) => const VectorDbSettingsScreen()),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              Icon(
-                Icons.storage,
-                color: isActive
-                    ? theme.colorScheme.primary
-                    : theme.colorScheme.onSurfaceVariant,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Vector Database',
-                      style: theme.textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.bold),
-                    ),
-                    Text(
-                      isActive
-                          ? 'LanceDB (Rust) — $count embeddings'
-                          : 'SQLite fallback — run setup to enable LanceDB',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: isActive
-                            ? Colors.green.shade700
-                            : theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (isActive)
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: Colors.green.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.bolt, size: 10, color: Colors.green),
-                      SizedBox(width: 3),
-                      Text(
-                        'Rust',
-                        style: TextStyle(
-                          color: Colors.green,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              const SizedBox(width: 8),
-              Icon(
-                Icons.arrow_forward_ios,
-                size: 16,
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 class _ClaudeApiCard extends ConsumerStatefulWidget {
