@@ -97,11 +97,14 @@ class VectorDbNotifier extends StateNotifier<VectorDbState> {
       state = state.copyWith(isInitialized: true, isInitializing: false);
       await refreshStats();
     } else {
+      final detail = LanceDbService.lastError;
+      final message = detail != null
+          ? 'Initialization failed: $detail\n\nRebuild the app: flutter build macos'
+          : 'Rust bridge unavailable.\n\nRebuild the app: flutter build macos';
       state = state.copyWith(
         isInitialized: false,
         isInitializing: false,
-        error: () =>
-            'Rust bridge not compiled.\n\nRun: dart run flutter_rust_bridge_codegen generate',
+        error: () => message,
       );
     }
   }

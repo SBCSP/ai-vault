@@ -30,6 +30,9 @@ class LanceDbService {
   /// are no-ops if already initialised with the same dim.
   ///
   /// Returns true when the Rust bridge is compiled and init succeeds.
+  /// Last initialization error, exposed so the UI can show a specific message.
+  static String? lastError;
+
   static Future<bool> initialize({int embeddingDim = 768}) async {
     if (_initialized) return true;
     try {
@@ -38,13 +41,16 @@ class LanceDbService {
       _embeddingDim = embeddingDim;
       await initLanceDb(dbPath: dbPath, embeddingDim: embeddingDim);
       _initialized = true;
+      lastError = null;
       return true;
-    } on UnsupportedError {
-      // Bridge stub — codegen hasn't been run yet
+    } on UnsupportedError catch (e) {
+      // FRB stub — app was not built with the Rust library
       _initialized = false;
+      lastError = 'UnsupportedError: $e';
       return false;
-    } catch (_) {
+    } catch (e) {
       _initialized = false;
+      lastError = e.toString();
       return false;
     }
   }
