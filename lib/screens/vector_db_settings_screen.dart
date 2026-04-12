@@ -212,7 +212,7 @@ class VectorDbSettingsScreen extends ConsumerWidget {
   Future<void> _buildIndex(BuildContext context, WidgetRef ref) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Build Vector Index?'),
         content: const Text(
           'This creates an HNSW index that makes similarity search much faster at scale. '
@@ -220,11 +220,11 @@ class VectorDbSettingsScreen extends ConsumerWidget {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
+            onPressed: () => Navigator.pop(dialogContext, false),
             child: const Text('Cancel'),
           ),
           FilledButton(
-            onPressed: () => Navigator.pop(context, true),
+            onPressed: () => Navigator.pop(dialogContext, true),
             child: const Text('Build Index'),
           ),
         ],
@@ -238,7 +238,7 @@ class VectorDbSettingsScreen extends ConsumerWidget {
   Future<void> _reindexAll(BuildContext context, WidgetRef ref) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Re-Index Everything?'),
         content: const Text(
           'This clears all existing LanceDB vectors and re-embeds all items. '
@@ -246,11 +246,11 @@ class VectorDbSettingsScreen extends ConsumerWidget {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
+            onPressed: () => Navigator.pop(dialogContext, false),
             child: const Text('Cancel'),
           ),
           FilledButton(
-            onPressed: () => Navigator.pop(context, true),
+            onPressed: () => Navigator.pop(dialogContext, true),
             child: const Text('Re-Index'),
           ),
         ],
@@ -267,7 +267,7 @@ class VectorDbSettingsScreen extends ConsumerWidget {
   Future<void> _deleteAll(BuildContext context, WidgetRef ref) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Delete All Vectors?'),
         content: const Text(
           'This permanently removes all embeddings from LanceDB. '
@@ -275,13 +275,13 @@ class VectorDbSettingsScreen extends ConsumerWidget {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
+            onPressed: () => Navigator.pop(dialogContext, false),
             child: const Text('Cancel'),
           ),
           FilledButton(
             style: FilledButton.styleFrom(
-                backgroundColor: Theme.of(context).colorScheme.error),
-            onPressed: () => Navigator.pop(context, true),
+                backgroundColor: Theme.of(dialogContext).colorScheme.error),
+            onPressed: () => Navigator.pop(dialogContext, true),
             child: const Text('Delete All'),
           ),
         ],

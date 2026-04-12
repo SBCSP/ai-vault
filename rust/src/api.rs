@@ -385,21 +385,26 @@ pub async fn lance_get_all_hashes(source_type_filter: String) -> Result<Vec<Sour
     let cfg = get_config().await?;
     let table = cfg.conn.open_table("embeddings").execute().await?;
 
-    let mut q = table.query().select(Select::columns(&[
-        "source_id",
-        "source_type",
-        "content_hash",
-        "model_name",
-    ]));
+    // LanceDB 0.14: only_if() is required to trigger the predicate-scan path
+    // that iterates every fragment. Without it, only a partial result is returned.
+    let filter = if source_type_filter.is_empty() {
+        "source_id IS NOT NULL".to_string()
+    } else {
+        format!("source_type = '{}'", escape_sql(&source_type_filter))
+    };
 
-    if !source_type_filter.is_empty() {
-        q = q.only_if(format!(
-            "source_type = '{}'",
-            escape_sql(&source_type_filter)
-        ));
-    }
-
-    let mut stream = q.execute().await?;
+    let mut stream = table
+        .query()
+        .select(Select::columns(&[
+            "source_id",
+            "source_type",
+            "content_hash",
+            "model_name",
+        ]))
+        .only_if(filter)
+        .limit(10_000_000)
+        .execute()
+        .await?;
     let mut results = Vec::new();
 
     while let Some(batch) = stream.next().await {
@@ -498,10 +503,15 @@ pub async fn lance_get_type_counts() -> Result<Vec<TypeCount>> {
     let cfg = get_config().await?;
     let table = cfg.conn.open_table("embeddings").execute().await?;
 
-    // Fetch just source_type for all rows and count in Rust
+    // Fetch just source_type for all rows and count in Rust.
+    // LanceDB 0.14: must use only_if() + limit() to trigger the predicate-scan
+    // path that iterates every fragment.  Without only_if(), the query uses a
+    // different code path and returns only a partial result set.
     let mut stream = table
         .query()
         .select(Select::columns(&["source_type"]))
+        .only_if("source_id IS NOT NULL")
+        .limit(10_000_000)
         .execute()
         .await?;
 
@@ -537,22 +547,27 @@ pub async fn lance_get_rows_page(
     let cfg = get_config().await?;
     let table = cfg.conn.open_table("embeddings").execute().await?;
 
-    let mut q = table.query().select(Select::columns(&[
-        "source_id",
-        "source_type",
-        "model_name",
-        "content_hash",
-        "created_at",
-    ]));
+    // LanceDB 0.14: only_if() is required to trigger the predicate-scan path
+    // that iterates every fragment. Without it, only a partial result is returned.
+    let filter = if source_type_filter.is_empty() {
+        "source_id IS NOT NULL".to_string()
+    } else {
+        format!("source_type = '{}'", escape_sql(&source_type_filter))
+    };
 
-    if !source_type_filter.is_empty() {
-        q = q.only_if(format!(
-            "source_type = '{}'",
-            escape_sql(&source_type_filter)
-        ));
-    }
-
-    let mut stream = q.execute().await?;
+    let mut stream = table
+        .query()
+        .select(Select::columns(&[
+            "source_id",
+            "source_type",
+            "model_name",
+            "content_hash",
+            "created_at",
+        ]))
+        .only_if(filter)
+        .limit(10_000_000)
+        .execute()
+        .await?;
 
     let mut all: Vec<EmbeddingRow> = Vec::new();
     while let Some(batch) = stream.next().await {

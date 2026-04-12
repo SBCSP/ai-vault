@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:drift/drift.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -390,9 +391,25 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
   }
 
   /// Index all wiki pages from bundled assets.
-  /// Uses a version-based hash so pages are only re-indexed when the app updates.
-  Future<void> indexWikiPages() async {
+  ///
+  /// [force] — when true, deletes all existing wiki_page vectors first and
+  /// re-indexes every page regardless of content hash.  Use this from the
+  /// manual "Index Wiki" button.  The default (false) skips unchanged pages,
+  /// suitable for the silent startup call.
+  ///
+  /// Returns the number of pages successfully indexed.
+  Future<int> indexWikiPages({bool force = false}) async {
+    int indexed = 0;
     try {
+      if (force) {
+        // Wipe existing wiki vectors so the hash check can't short-circuit.
+        try {
+          await LanceDbService.deleteByType('wiki_page');
+        } catch (e) {
+          debugPrint('[WikiIndex] deleteByType failed: $e');
+        }
+      }
+
       final jsonStr = await rootBundle.loadString('wiki/wiki.json');
       final json = jsonDecode(jsonStr) as Map<String, dynamic>;
       final wikiVersion = json['version'] as String? ?? '';
@@ -402,7 +419,7 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
         final sec = section as Map<String, dynamic>;
         final pages = sec['pages'] as List<dynamic>;
         for (final page in pages) {
-          if (!mounted) return;
+          if (!mounted) return indexed;
           final p = page as Map<String, dynamic>;
           final title = p['title'] as String;
           final file = p['file'] as String;
@@ -411,13 +428,15 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
           try {
             final content = await rootBundle.loadString('wiki/$file');
             final text = EmbeddingService.buildWikiPageText(title, content);
-            // Include version in hash so pages re-index on app update
             final hash = EmbeddingService.computeContentHash('$wikiVersion:$text');
 
-            if (await _isAlreadyIndexed(sourceId, hash)) continue;
+            if (!force && await _isAlreadyIndexed(sourceId, hash)) continue;
 
             final vector = await _service.generateEmbedding(text);
-            if (vector == null) continue;
+            if (vector == null) {
+              debugPrint('[WikiIndex] embedding returned null for $file');
+              continue;
+            }
 
             await _upsertVector(
               sourceId: sourceId,
@@ -425,16 +444,20 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
               hash: hash,
               vector: vector,
             );
-          } catch (_) {
-            // Skip pages that fail to load
+            indexed++;
+            debugPrint('[WikiIndex] indexed $file ($indexed so far)');
+          } catch (e) {
+            debugPrint('[WikiIndex] error on $file: $e');
           }
         }
       }
 
       await refreshStats();
-    } catch (_) {
-      // Wiki index not available — skip silently
+      debugPrint('[WikiIndex] done — $indexed pages indexed');
+    } catch (e) {
+      debugPrint('[WikiIndex] outer error: $e');
     }
+    return indexed;
   }
 
   /// Re-index all entries, notes, documents, and chat sessions from scratch.

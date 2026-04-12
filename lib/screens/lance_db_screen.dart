@@ -57,10 +57,22 @@ class _LanceDbScreenState extends ConsumerState<LanceDbScreen>
   void initState() {
     super.initState();
     _tabs = TabController(length: 3, vsync: this);
+    _tabs.addListener(_onTabChanged);
+  }
+
+  void _onTabChanged() {
+    if (!_tabs.indexIsChanging) return;
+    switch (_tabs.index) {
+      case 1: // Collections — always fetch fresh
+        ref.invalidate(_typeCountsProvider);
+      case 2: // Browser — always fetch fresh
+        ref.invalidate(_browserRowsProvider);
+    }
   }
 
   @override
   void dispose() {
+    _tabs.removeListener(_onTabChanged);
     _tabs.dispose();
     super.dispose();
   }
@@ -451,7 +463,7 @@ class _CollectionCard extends StatelessWidget {
 
     final ok = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: Text('Delete "$label" Collection?'),
         content: Text(
           'Permanently removes all ${tc.count} "${tc.sourceType}" embeddings. '
@@ -459,13 +471,13 @@ class _CollectionCard extends StatelessWidget {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
+            onPressed: () => Navigator.pop(dialogContext, false),
             child: const Text('Cancel'),
           ),
           FilledButton(
             style: FilledButton.styleFrom(
-                backgroundColor: Theme.of(context).colorScheme.error),
-            onPressed: () => Navigator.pop(context, true),
+                backgroundColor: Theme.of(dialogContext).colorScheme.error),
+            onPressed: () => Navigator.pop(dialogContext, true),
             child: const Text('Delete'),
           ),
         ],
@@ -787,7 +799,7 @@ class _EmbeddingTable extends ConsumerWidget {
       BuildContext context, WidgetRef ref, EmbeddingRow row) async {
     final ok = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Delete Embedding?'),
         content: Text(
           'Remove embedding for:\n${row.sourceId}\n\n'
@@ -795,13 +807,13 @@ class _EmbeddingTable extends ConsumerWidget {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
+            onPressed: () => Navigator.pop(dialogContext, false),
             child: const Text('Cancel'),
           ),
           FilledButton(
             style: FilledButton.styleFrom(
-                backgroundColor: Theme.of(context).colorScheme.error),
-            onPressed: () => Navigator.pop(context, true),
+                backgroundColor: Theme.of(dialogContext).colorScheme.error),
+            onPressed: () => Navigator.pop(dialogContext, true),
             child: const Text('Delete'),
           ),
         ],
@@ -1212,7 +1224,11 @@ class _IndexManagementCard extends ConsumerWidget {
             'RAG search will not work until you re-index.',
         confirmLabel: 'Delete All',
         destructive: true);
-    if (ok) await ref.read(vectorDbProvider.notifier).deleteAll();
+    if (ok) {
+      await ref.read(vectorDbProvider.notifier).deleteAll();
+      ref.invalidate(_typeCountsProvider);
+      ref.invalidate(_browserRowsProvider);
+    }
   }
 
   Future<bool> _confirm(BuildContext context,
@@ -1222,20 +1238,20 @@ class _IndexManagementCard extends ConsumerWidget {
       bool destructive = false}) async {
     final result = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: Text(title),
         content: Text(body),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context, false),
+              onPressed: () => Navigator.pop(dialogContext, false),
               child: const Text('Cancel')),
           FilledButton(
             style: destructive
                 ? FilledButton.styleFrom(
                     backgroundColor:
-                        Theme.of(context).colorScheme.error)
+                        Theme.of(dialogContext).colorScheme.error)
                 : null,
-            onPressed: () => Navigator.pop(context, true),
+            onPressed: () => Navigator.pop(dialogContext, true),
             child: Text(confirmLabel),
           ),
         ],

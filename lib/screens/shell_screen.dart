@@ -633,6 +633,9 @@ class _NestedNavigator extends StatelessWidget {
     return Navigator(
       key: navigatorKey,
       onGenerateRoute: (_) => MaterialPageRoute(builder: builder),
+      onGenerateInitialRoutes: (_, __) => [
+        MaterialPageRoute(builder: builder),
+      ],
     );
   }
 }

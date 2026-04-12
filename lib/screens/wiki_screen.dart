@@ -2,25 +2,28 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../providers/embedding_provider.dart';
 import '../providers/version_provider.dart';
 import '../widgets/markdown_response.dart';
 
 /// In-app wiki viewer. Loads markdown pages from bundled assets
 /// defined in wiki/wiki.json.
-class WikiScreen extends StatefulWidget {
+class WikiScreen extends ConsumerStatefulWidget {
   final bool embedded;
   const WikiScreen({super.key, this.embedded = false});
 
   @override
-  State<WikiScreen> createState() => _WikiScreenState();
+  ConsumerState<WikiScreen> createState() => _WikiScreenState();
 }
 
-class _WikiScreenState extends State<WikiScreen> {
+class _WikiScreenState extends ConsumerState<WikiScreen> {
   List<_WikiSection> _sections = [];
   String? _selectedFile;
   String _pageContent = '';
   bool _loading = true;
+  bool _isIndexing = false;
 
   @override
   void initState() {
@@ -79,6 +82,26 @@ class _WikiScreenState extends State<WikiScreen> {
     }
   }
 
+  Future<void> _indexWiki() async {
+    if (_isIndexing) return;
+    setState(() => _isIndexing = true);
+    try {
+      final count = await ref
+          .read(embeddingIndexProvider.notifier)
+          .indexWikiPages(force: true);
+      if (mounted) {
+        final msg = count == 0
+            ? 'No pages indexed — check that the embedding model is running.'
+            : 'Wiki indexed: $count page${count == 1 ? '' : 's'} written to LanceDB.';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(msg)),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isIndexing = false);
+    }
+  }
+
   IconData _iconFromName(String name) {
     return switch (name) {
       'rocket_launch' => Icons.rocket_launch,
@@ -93,9 +116,44 @@ class _WikiScreenState extends State<WikiScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
+    final actionBar = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(
+            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.4),
+          ),
+        ),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          _isIndexing
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const SizedBox.shrink(),
+          if (_isIndexing) const SizedBox(width: 8),
+          FilledButton.icon(
+            onPressed: _isIndexing ? null : _indexWiki,
+            icon: const Icon(Icons.auto_awesome, size: 16),
+            label: const Text('Index Wiki'),
+            style: FilledButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+            ),
+          ),
+        ],
+      ),
+    );
+
     final body = _loading
           ? const Center(child: CircularProgressIndicator())
-          : Row(
+          : Column(
+              children: [
+                actionBar,
+                Expanded(child: Row(
               children: [
                 // Sidebar navigation
                 SizedBox(
@@ -155,6 +213,8 @@ class _WikiScreenState extends State<WikiScreen> {
                           ),
                         ),
                 ),
+              ],
+            )),
               ],
             );
 
