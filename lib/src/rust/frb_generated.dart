@@ -64,7 +64,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => 1451855313;
+  int get rustContentHash => -311286473;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -87,8 +87,16 @@ abstract class RustLibApi extends BaseApi {
 
   Future<void> crateApiLanceDeleteBySource({required String sourceId});
 
+  Future<void> crateApiLanceDeleteByType({required String sourceType});
+
   Future<List<SourceHashEntry>> crateApiLanceGetAllHashes({
     required String sourceTypeFilter,
+  });
+
+  Future<List<EmbeddingRow>> crateApiLanceGetRowsPage({
+    required String sourceTypeFilter,
+    required PlatformInt64 offset,
+    required PlatformInt64 limit,
   });
 
   Future<SourceHashEntry?> crateApiLanceGetSourceHash({
@@ -96,6 +104,8 @@ abstract class RustLibApi extends BaseApi {
   });
 
   Future<VectorDbStats> crateApiLanceGetStats();
+
+  Future<List<TypeCount>> crateApiLanceGetTypeCounts();
 
   Future<bool> crateApiLanceIsInitialized();
 
@@ -242,6 +252,36 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  Future<void> crateApiLanceDeleteByType({required String sourceType}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(sourceType, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 5,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+        constMeta: kCrateApiLanceDeleteByTypeConstMeta,
+        argValues: [sourceType],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiLanceDeleteByTypeConstMeta => const TaskConstMeta(
+    debugName: "lance_delete_by_type",
+    argNames: ["sourceType"],
+  );
+
+  @override
   Future<List<SourceHashEntry>> crateApiLanceGetAllHashes({
     required String sourceTypeFilter,
   }) {
@@ -253,7 +293,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 5,
+            funcId: 6,
             port: port_,
           );
         },
@@ -274,6 +314,42 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   );
 
   @override
+  Future<List<EmbeddingRow>> crateApiLanceGetRowsPage({
+    required String sourceTypeFilter,
+    required PlatformInt64 offset,
+    required PlatformInt64 limit,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(sourceTypeFilter, serializer);
+          sse_encode_i_64(offset, serializer);
+          sse_encode_i_64(limit, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 7,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_embedding_row,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+        constMeta: kCrateApiLanceGetRowsPageConstMeta,
+        argValues: [sourceTypeFilter, offset, limit],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiLanceGetRowsPageConstMeta => const TaskConstMeta(
+    debugName: "lance_get_rows_page",
+    argNames: ["sourceTypeFilter", "offset", "limit"],
+  );
+
+  @override
   Future<SourceHashEntry?> crateApiLanceGetSourceHash({
     required String sourceId,
   }) {
@@ -285,7 +361,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 6,
+            funcId: 8,
             port: port_,
           );
         },
@@ -314,7 +390,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 7,
+            funcId: 9,
             port: port_,
           );
         },
@@ -333,6 +409,33 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "lance_get_stats", argNames: []);
 
   @override
+  Future<List<TypeCount>> crateApiLanceGetTypeCounts() {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 10,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_type_count,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+        constMeta: kCrateApiLanceGetTypeCountsConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiLanceGetTypeCountsConstMeta =>
+      const TaskConstMeta(debugName: "lance_get_type_counts", argNames: []);
+
+  @override
   Future<bool> crateApiLanceIsInitialized() {
     return handler.executeNormal(
       NormalTask(
@@ -341,7 +444,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 8,
+            funcId: 11,
             port: port_,
           );
         },
@@ -375,7 +478,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 9,
+            funcId: 12,
             port: port_,
           );
         },
@@ -415,7 +518,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 10,
+            funcId: 13,
             port: port_,
           );
         },
@@ -467,6 +570,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  EmbeddingRow dco_decode_embedding_row(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    return EmbeddingRow(
+      sourceId: dco_decode_String(arr[0]),
+      sourceType: dco_decode_String(arr[1]),
+      modelName: dco_decode_String(arr[2]),
+      contentHash: dco_decode_String(arr[3]),
+      createdAt: dco_decode_i_64(arr[4]),
+    );
+  }
+
+  @protected
   double dco_decode_f_32(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as double;
@@ -497,6 +615,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<EmbeddingRow> dco_decode_list_embedding_row(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_embedding_row).toList();
+  }
+
+  @protected
   List<double> dco_decode_list_prim_f_32_loose(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as List<double>;
@@ -524,6 +648,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   List<SourceHashEntry> dco_decode_list_source_hash_entry(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_source_hash_entry).toList();
+  }
+
+  @protected
+  List<TypeCount> dco_decode_list_type_count(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_type_count).toList();
   }
 
   @protected
@@ -558,6 +688,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       sourceType: dco_decode_String(arr[1]),
       contentHash: dco_decode_String(arr[2]),
       modelName: dco_decode_String(arr[3]),
+    );
+  }
+
+  @protected
+  TypeCount dco_decode_type_count(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return TypeCount(
+      sourceType: dco_decode_String(arr[0]),
+      count: dco_decode_i_64(arr[1]),
     );
   }
 
@@ -616,6 +758,23 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  EmbeddingRow sse_decode_embedding_row(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_sourceId = sse_decode_String(deserializer);
+    var var_sourceType = sse_decode_String(deserializer);
+    var var_modelName = sse_decode_String(deserializer);
+    var var_contentHash = sse_decode_String(deserializer);
+    var var_createdAt = sse_decode_i_64(deserializer);
+    return EmbeddingRow(
+      sourceId: var_sourceId,
+      sourceType: var_sourceType,
+      modelName: var_modelName,
+      contentHash: var_contentHash,
+      createdAt: var_createdAt,
+    );
+  }
+
+  @protected
   double sse_decode_f_32(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return deserializer.buffer.getFloat32();
@@ -647,6 +806,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var ans_ = <String>[];
     for (var idx_ = 0; idx_ < len_; ++idx_) {
       ans_.add(sse_decode_String(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<EmbeddingRow> sse_decode_list_embedding_row(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <EmbeddingRow>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_embedding_row(deserializer));
     }
     return ans_;
   }
@@ -701,6 +874,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<TypeCount> sse_decode_list_type_count(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <TypeCount>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_type_count(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
   SourceHashEntry? sse_decode_opt_box_autoadd_source_hash_entry(
     SseDeserializer deserializer,
   ) {
@@ -743,6 +928,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       contentHash: var_contentHash,
       modelName: var_modelName,
     );
+  }
+
+  @protected
+  TypeCount sse_decode_type_count(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_sourceType = sse_decode_String(deserializer);
+    var var_count = sse_decode_i_64(deserializer);
+    return TypeCount(sourceType: var_sourceType, count: var_count);
   }
 
   @protected
@@ -802,6 +995,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_embedding_row(EmbeddingRow self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.sourceId, serializer);
+    sse_encode_String(self.sourceType, serializer);
+    sse_encode_String(self.modelName, serializer);
+    sse_encode_String(self.contentHash, serializer);
+    sse_encode_i_64(self.createdAt, serializer);
+  }
+
+  @protected
   void sse_encode_f_32(double self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     serializer.buffer.putFloat32(self);
@@ -831,6 +1034,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_i_32(self.length, serializer);
     for (final item in self) {
       sse_encode_String(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_embedding_row(
+    List<EmbeddingRow> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_embedding_row(item, serializer);
     }
   }
 
@@ -891,6 +1106,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_list_type_count(
+    List<TypeCount> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_type_count(item, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_opt_box_autoadd_source_hash_entry(
     SourceHashEntry? self,
     SseSerializer serializer,
@@ -926,6 +1153,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.sourceType, serializer);
     sse_encode_String(self.contentHash, serializer);
     sse_encode_String(self.modelName, serializer);
+  }
+
+  @protected
+  void sse_encode_type_count(TypeCount self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.sourceType, serializer);
+    sse_encode_i_64(self.count, serializer);
   }
 
   @protected

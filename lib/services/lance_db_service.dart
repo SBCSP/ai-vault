@@ -6,7 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import '../src/rust/api.dart';
 
 export '../src/rust/api.dart'
-    show SimilarityResult, SourceHashEntry, VectorDbStats;
+    show SimilarityResult, SourceHashEntry, VectorDbStats, TypeCount, EmbeddingRow;
 
 /// Dart façade over the flutter_rust_bridge LanceDB API.
 ///
@@ -119,6 +119,32 @@ class LanceDbService {
   /// Throws if count is too low — caller should show a user-facing message.
   static Future<void> createVectorIndex() async {
     await lanceCreateVectorIndex();
+  }
+
+  // ── Collections / Browser ────────────────────────────────
+
+  /// Return row counts grouped by source_type.
+  static Future<List<TypeCount>> getTypeCounts() async {
+    return lanceGetTypeCounts();
+  }
+
+  /// Return a page of embedding rows (no vector bytes) for the Browser tab.
+  /// [sourceTypeFilter] — pass empty string for all types.
+  static Future<List<EmbeddingRow>> getRowsPage({
+    String sourceTypeFilter = '',
+    int offset = 0,
+    int limit = 50,
+  }) async {
+    return lanceGetRowsPage(
+      sourceTypeFilter: sourceTypeFilter,
+      offset: offset,
+      limit: limit,
+    );
+  }
+
+  /// Delete all embeddings whose source_type matches [sourceType].
+  static Future<void> deleteByType(String sourceType) async {
+    await lanceDeleteByType(sourceType: sourceType);
   }
 
   // ── Helpers ───────────────────────────────────────────────
