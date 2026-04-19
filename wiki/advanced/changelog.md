@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.3.3 — Claude UX Improvements
+- Claude model selector now fetches available models live from the Anthropic API (paginated)
+- Fixed race condition: model list now loads correctly on first open when a key is already saved
+- `ClaudeApiService` is now immutable; notifier properly reassigns state so Riverpod notifies listeners
+- Models refresh automatically after saving an API key; manual refresh button available
+- Falls back to a built-in list if the API is unreachable
+- AI Chat model badge now shows the API display name (e.g. "Claude Sonnet 4") instead of a mangled model ID
+- AI Chat input field is now full-width, matching the output panel
+
 ## v1.3.2 — Bug Fixes & Wiki Indexing
 - Fixed Flutter Navigator crash (`_history.isNotEmpty`) caused by nested navigators inside IndexedStack
 - Fixed LanceDB "Delete All Vectors" dialog not closing and corrupting navigator history

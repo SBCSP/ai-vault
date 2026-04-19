@@ -49,6 +49,13 @@ class LlmProviderTypeNotifier extends StateNotifier<LlmProviderType> {
   }
 }
 
+// --- Claude Models Cache Provider ---
+// Populated by the settings screen after a successful fetchModels() call.
+// Allows any screen to resolve a model ID to its API display name.
+
+final claudeModelsCacheProvider =
+    StateProvider<List<(String, String)>>((ref) => []);
+
 // --- Claude API Provider ---
 
 final claudeApiProvider =
@@ -65,18 +72,22 @@ class ClaudeApiNotifier extends StateNotifier<ClaudeApiService> {
     final prefs = await SharedPreferences.getInstance();
     final key = prefs.getString('claude_api_key');
     final model = prefs.getString('claude_model');
-    if (key != null) state.updateApiKey(key);
-    if (model != null) state.updateModel(model);
+    if (key != null || model != null) {
+      state = ClaudeApiService(
+        apiKey: key ?? '',
+        model: model ?? ClaudeApiService.defaultModel,
+      );
+    }
   }
 
   Future<void> updateApiKey(String key) async {
-    state.updateApiKey(key);
+    state = ClaudeApiService(apiKey: key, model: state.model);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('claude_api_key', key);
   }
 
   Future<void> updateModel(String model) async {
-    state.updateModel(model);
+    state = ClaudeApiService(apiKey: state.apiKey, model: model);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('claude_model', model);
   }

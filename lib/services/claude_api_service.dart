@@ -10,11 +10,13 @@ import 'ai_service.dart';
 /// The secrets lock is automatically engaged when this provider is active.
 class ClaudeApiService {
   static const _apiUrl = 'https://api.anthropic.com/v1/messages';
+  static const _modelsUrl = 'https://api.anthropic.com/v1/models';
   static const _apiVersion = '2023-06-01';
-  static const _defaultModel = 'claude-sonnet-4-20250514';
+  static const defaultModel = 'claude-sonnet-4-20250514';
+  static const _defaultModel = defaultModel;
 
-  String _apiKey;
-  String _model;
+  final String _apiKey;
+  final String _model;
 
   ClaudeApiService({
     String apiKey = '',
@@ -26,15 +28,58 @@ class ClaudeApiService {
   String get model => _model;
   bool get isConfigured => _apiKey.isNotEmpty;
 
-  void updateApiKey(String key) => _apiKey = key;
-  void updateModel(String model) => _model = model;
-
-  /// Available Claude models for selection.
-  static const availableModels = [
+  /// Static fallback model list used when the API is unconfigured or unreachable.
+  static const fallbackModels = [
     ('claude-sonnet-4-20250514', 'Claude Sonnet 4', 'Fast & capable'),
     ('claude-opus-4-20250514', 'Claude Opus 4', 'Most intelligent'),
     ('claude-haiku-4-20250514', 'Claude Haiku 4', 'Fastest & most compact'),
   ];
+
+  /// Fetches all available models from the Anthropic API with pagination.
+  /// Returns a list of (modelId, displayName, createdAt) triples
+  /// sorted by creation date descending (newest first).
+  Future<List<(String, String)>> fetchModels() async {
+    final allModels = <(String, String, String)>[];
+    String? afterId;
+
+    // Paginate through all results
+    for (var page = 0; page < 10; page++) {
+      final uri = Uri.parse(_modelsUrl).replace(queryParameters: {
+        'limit': '100',
+        if (afterId != null) 'after_id': afterId,
+      });
+
+      final response = await http
+          .get(uri, headers: _headers())
+          .timeout(const Duration(seconds: 15));
+
+      if (response.statusCode != 200) {
+        throw Exception('HTTP ${response.statusCode}: ${_parseError(response)}');
+      }
+
+      final json = jsonDecode(response.body) as Map<String, dynamic>;
+      final data = json['data'] as List<dynamic>? ?? [];
+
+      for (final m in data) {
+        final id = m['id'] as String;
+        final displayName = m['display_name'] as String? ?? id;
+        final createdAt = m['created_at'] as String? ?? '';
+        allModels.add((id, displayName, createdAt));
+      }
+
+      final hasMore = json['has_more'] as bool? ?? false;
+      if (!hasMore || data.isEmpty) break;
+      afterId = json['last_id'] as String?;
+      if (afterId == null) break;
+    }
+
+    if (allModels.isEmpty) throw Exception('No models returned');
+
+    // Sort by creation date descending (newest first)
+    allModels.sort((a, b) => b.$3.compareTo(a.$3));
+
+    return allModels.map((m) => (m.$1, m.$2)).toList();
+  }
 
   /// Test the API connection with a simple request.
   Future<bool> testConnection() async {

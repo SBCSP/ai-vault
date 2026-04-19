@@ -9,6 +9,7 @@ import '../providers/chat_history_provider.dart';
 import '../providers/embedding_provider.dart';
 import '../providers/secrets_lock_provider.dart';
 import '../services/ai_service.dart';
+import '../services/claude_api_service.dart';
 import '../services/mcp_service.dart';
 import '../providers/mcp_provider.dart';
 import '../widgets/markdown_response.dart';
@@ -290,7 +291,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             ),
             child: Text(
               ref.watch(llmProviderTypeProvider) == LlmProviderType.claude
-                  ? ref.watch(claudeApiProvider).model.split('-').take(2).join(' ')
+                  ? () {
+                      final modelId = ref.watch(claudeApiProvider).model;
+                      final cache = ref.watch(claudeModelsCacheProvider);
+                      final match = cache.where((m) => m.$1 == modelId).firstOrNull;
+                      return match?.$2 ??
+                          ClaudeApiService.fallbackModels
+                              .where((m) => m.$1 == modelId)
+                              .map((m) => m.$2)
+                              .firstOrNull ??
+                          modelId;
+                    }()
                   : ref.watch(aiServiceProvider).model,
               style: theme.textTheme.labelSmall?.copyWith(
                 color: theme.colorScheme.onPrimaryContainer,
@@ -459,10 +470,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               16,
               12 + MediaQuery.of(context).viewPadding.bottom,
             ),
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 720),
-                child: Row(
+            child: Row(
                   children: [
                     Expanded(
                       child: TextField(
@@ -503,8 +511,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                       ),
                     ),
                   ],
-                ),
-              ),
             ),
           ),
         ],
