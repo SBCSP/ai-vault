@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:drift/drift.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -114,21 +115,13 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
   String get _modelName => _ref.read(embeddingModelProvider);
 
   Future<void> refreshStats() async {
-    // Prefer LanceDB count when available
-    if (LanceDbService.isAvailable) {
-      try {
-        final stats = await LanceDbService.getStats();
-        if (mounted) {
-          state = state.copyWith(indexedCount: stats.totalEmbeddings.toInt());
-        }
-        return;
-      } catch (_) {
-        // fall through to SQLite
+    try {
+      final stats = await LanceDbService.getStats();
+      if (mounted) {
+        state = state.copyWith(indexedCount: stats.totalEmbeddings.toInt());
       }
-    }
-    final count = await _db.countEmbeddings();
-    if (mounted) {
-      state = state.copyWith(indexedCount: count);
+    } catch (_) {
+      // LanceDB unavailable — count stays at current value
     }
   }
 
@@ -136,56 +129,34 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
 
   /// Returns true if this sourceId is already indexed with the same hash+model.
   Future<bool> _isAlreadyIndexed(String sourceId, String hash) async {
-    if (LanceDbService.isAvailable) {
-      try {
-        final entry = await LanceDbService.getSourceHash(sourceId);
-        return entry != null &&
-            entry.contentHash == hash &&
-            entry.modelName == _modelName;
-      } catch (_) {}
+    try {
+      final entry = await LanceDbService.getSourceHash(sourceId);
+      return entry != null &&
+          entry.contentHash == hash &&
+          entry.modelName == _modelName;
+    } catch (_) {
+      return false;
     }
-    return false;
   }
 
-  /// Dual-write: store in LanceDB when available, always also write to SQLite.
+  /// Write vector to LanceDB (exclusive store).
   Future<void> _upsertVector({
-    required String sqliteId,
     required String sourceId,
     required String sourceType,
     required String hash,
     required List<double> vector,
   }) async {
-    // LanceDB — primary store when bridge is compiled
-    if (LanceDbService.isAvailable) {
-      try {
-        await LanceDbService.upsertEmbedding(
-          sourceId: sourceId,
-          sourceType: sourceType,
-          modelName: _modelName,
-          contentHash: hash,
-          vector: vector,
-        );
-        await refreshStats();
-        return; // Skip SQLite write — LanceDB is the authoritative store
-      } catch (_) {
-        // Bridge call failed; fall through to SQLite
-      }
-    }
-
-    // SQLite fallback
-    await _db.upsertEmbedding(EmbeddingsCompanion(
-      id: Value(sqliteId),
-      sourceId: Value(sourceId),
-      sourceType: Value(sourceType),
-      embedding: Value(jsonEncode(vector)),
-      modelName: Value(_modelName),
-      contentHash: Value(hash),
-      createdAt: Value(DateTime.now()),
-    ));
+    await LanceDbService.upsertEmbedding(
+      sourceId: sourceId,
+      sourceType: sourceType,
+      modelName: _modelName,
+      contentHash: hash,
+      vector: vector,
+    );
     await refreshStats();
   }
 
-  // ── RAG search (ANN via LanceDB or O(n) SQLite fallback) ────────────────
+  // ── RAG search (ANN via LanceDB) ────────────────────────────────────────
 
   /// Semantic similarity search over all indexed embeddings.
   /// Returns source IDs+types sorted by score descending.
@@ -194,43 +165,22 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
     int topK = 10,
     double threshold = 0.3,
   }) async {
-    if (LanceDbService.isAvailable) {
-      try {
-        final results = await LanceDbService.searchSimilar(
-          queryVector: queryVector,
-          topK: topK,
-        );
-        return results
-            .where((r) => r.similarity >= threshold)
-            .map((r) => (
-                  sourceId: r.sourceId,
-                  sourceType: r.sourceType,
-                  score: r.similarity,
-                ))
-            .toList();
-      } catch (_) {
-        // Fall through to SQLite scan
-      }
-    }
-
-    // SQLite O(n) cosine similarity fallback
-    final allEmbeddings = await _db.getAllEmbeddings();
-    final scored = <({String sourceId, String sourceType, double score})>[];
-    for (final emb in allEmbeddings) {
-      final vector = (jsonDecode(emb.embedding) as List<dynamic>)
-          .map((e) => (e as num).toDouble())
+    try {
+      final results = await LanceDbService.searchSimilar(
+        queryVector: queryVector,
+        topK: topK,
+      );
+      return results
+          .where((r) => r.similarity >= threshold)
+          .map((r) => (
+                sourceId: r.sourceId,
+                sourceType: r.sourceType,
+                score: r.similarity,
+              ))
           .toList();
-      final score = EmbeddingService.cosineSimilarity(queryVector, vector);
-      if (score >= threshold) {
-        scored.add((
-          sourceId: emb.sourceId,
-          sourceType: emb.sourceType,
-          score: score,
-        ));
-      }
+    } catch (_) {
+      return [];
     }
-    scored.sort((a, b) => b.score.compareTo(a.score));
-    return scored.take(topK).toList();
   }
 
   /// Index a single vault entry. Skips if content hash is unchanged.
@@ -240,19 +190,10 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
 
     if (await _isAlreadyIndexed(entry.id, hash)) return;
 
-    // SQLite existing id (needed for SQLite upsert path)
-    final existing = await _db.getEmbeddingBySourceId(entry.id);
-    if (existing != null &&
-        existing.contentHash == hash &&
-        existing.modelName == _modelName) {
-      return;
-    }
-
     final vector = await _service.generateEmbedding(text);
     if (vector == null) return;
 
     await _upsertVector(
-      sqliteId: existing?.id ?? _uuid.v4(),
       sourceId: entry.id,
       sourceType: 'vault_entry',
       hash: hash,
@@ -267,18 +208,10 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
 
     if (await _isAlreadyIndexed(note.id, hash)) return;
 
-    final existing = await _db.getEmbeddingBySourceId(note.id);
-    if (existing != null &&
-        existing.contentHash == hash &&
-        existing.modelName == _modelName) {
-      return;
-    }
-
     final vector = await _service.generateEmbedding(text);
     if (vector == null) return;
 
     await _upsertVector(
-      sqliteId: existing?.id ?? _uuid.v4(),
       sourceId: note.id,
       sourceType: 'note',
       hash: hash,
@@ -288,19 +221,13 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
 
   /// Remove embedding when a vault entry is deleted.
   Future<void> removeEntry(String id) async {
-    if (LanceDbService.isAvailable) {
-      try { await LanceDbService.deleteBySource(id); } catch (_) {}
-    }
-    await _db.deleteEmbeddingBySourceId(id);
+    try { await LanceDbService.deleteBySource(id); } catch (_) {}
     await refreshStats();
   }
 
   /// Remove embedding when a note is deleted.
   Future<void> removeNote(String id) async {
-    if (LanceDbService.isAvailable) {
-      try { await LanceDbService.deleteBySource(id); } catch (_) {}
-    }
-    await _db.deleteEmbeddingBySourceId(id);
+    try { await LanceDbService.deleteBySource(id); } catch (_) {}
     await refreshStats();
   }
 
@@ -311,18 +238,10 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
 
     if (await _isAlreadyIndexed(idea.id, hash)) return;
 
-    final existing = await _db.getEmbeddingBySourceId(idea.id);
-    if (existing != null &&
-        existing.contentHash == hash &&
-        existing.modelName == _modelName) {
-      return;
-    }
-
     final vector = await _service.generateEmbedding(text);
     if (vector == null) return;
 
     await _upsertVector(
-      sqliteId: existing?.id ?? _uuid.v4(),
       sourceId: idea.id,
       sourceType: 'idea',
       hash: hash,
@@ -332,10 +251,7 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
 
   /// Remove embedding when an idea is deleted.
   Future<void> removeIdea(String id) async {
-    if (LanceDbService.isAvailable) {
-      try { await LanceDbService.deleteBySource(id); } catch (_) {}
-    }
-    await _db.deleteEmbeddingBySourceId(id);
+    try { await LanceDbService.deleteBySource(id); } catch (_) {}
     await refreshStats();
   }
 
@@ -374,21 +290,19 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
         createdAt: DateTime.now(),
       ));
 
-      // Generate and store embedding with document title prefix
+      // Generate and store embedding
       final textForEmbedding =
           EmbeddingService.buildChunkText(doc.title, chunks[i]);
       final vector = await _service.generateEmbedding(textForEmbedding);
 
       if (vector != null) {
-        await _db.upsertEmbedding(EmbeddingsCompanion(
-          id: Value(_uuid.v4()),
-          sourceId: Value(chunkId),
-          sourceType: const Value('document_chunk'),
-          embedding: Value(jsonEncode(vector)),
-          modelName: Value(_modelName),
-          contentHash: Value(chunkHash),
-          createdAt: Value(DateTime.now()),
-        ));
+        await LanceDbService.upsertEmbedding(
+          sourceId: chunkId,
+          sourceType: 'document_chunk',
+          modelName: _modelName,
+          contentHash: chunkHash,
+          vector: vector,
+        );
       }
     }
 
@@ -408,7 +322,7 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
   Future<void> removeDocument(String documentId) async {
     final chunks = await _db.getChunksByDocumentId(documentId);
     for (final chunk in chunks) {
-      await _db.deleteEmbeddingBySourceId(chunk.id);
+      try { await LanceDbService.deleteBySource(chunk.id); } catch (_) {}
     }
     await _db.deleteChunksByDocumentId(documentId);
     await refreshStats();
@@ -425,18 +339,10 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
 
     if (await _isAlreadyIndexed(session.id, hash)) return;
 
-    final existing = await _db.getEmbeddingBySourceId(session.id);
-    if (existing != null &&
-        existing.contentHash == hash &&
-        existing.modelName == _modelName) {
-      return;
-    }
-
     final vector = await _service.generateEmbedding(text);
     if (vector == null) return;
 
     await _upsertVector(
-      sqliteId: existing?.id ?? _uuid.v4(),
       sourceId: session.id,
       sourceType: 'chat_session',
       hash: hash,
@@ -446,10 +352,7 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
 
   /// Remove embedding for a deleted chat session.
   Future<void> removeChatSession(String id) async {
-    if (LanceDbService.isAvailable) {
-      try { await LanceDbService.deleteBySource(id); } catch (_) {}
-    }
-    await _db.deleteEmbeddingBySourceId(id);
+    try { await LanceDbService.deleteBySource(id); } catch (_) {}
     await refreshStats();
   }
 
@@ -467,18 +370,10 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
 
     if (await _isAlreadyIndexed(sourceId, hash)) return;
 
-    final existing = await _db.getEmbeddingBySourceId(sourceId);
-    if (existing != null &&
-        existing.contentHash == hash &&
-        existing.modelName == _modelName) {
-      return;
-    }
-
     final vector = await _service.generateEmbedding(text);
     if (vector == null) return;
 
     await _upsertVector(
-      sqliteId: existing?.id ?? _uuid.v4(),
       sourceId: sourceId,
       sourceType: 'audit_log',
       hash: hash,
@@ -496,9 +391,25 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
   }
 
   /// Index all wiki pages from bundled assets.
-  /// Uses a version-based hash so pages are only re-indexed when the app updates.
-  Future<void> indexWikiPages() async {
+  ///
+  /// [force] — when true, deletes all existing wiki_page vectors first and
+  /// re-indexes every page regardless of content hash.  Use this from the
+  /// manual "Index Wiki" button.  The default (false) skips unchanged pages,
+  /// suitable for the silent startup call.
+  ///
+  /// Returns the number of pages successfully indexed.
+  Future<int> indexWikiPages({bool force = false}) async {
+    int indexed = 0;
     try {
+      if (force) {
+        // Wipe existing wiki vectors so the hash check can't short-circuit.
+        try {
+          await LanceDbService.deleteByType('wiki_page');
+        } catch (e) {
+          debugPrint('[WikiIndex] deleteByType failed: $e');
+        }
+      }
+
       final jsonStr = await rootBundle.loadString('wiki/wiki.json');
       final json = jsonDecode(jsonStr) as Map<String, dynamic>;
       final wikiVersion = json['version'] as String? ?? '';
@@ -508,7 +419,7 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
         final sec = section as Map<String, dynamic>;
         final pages = sec['pages'] as List<dynamic>;
         for (final page in pages) {
-          if (!mounted) return;
+          if (!mounted) return indexed;
           final p = page as Map<String, dynamic>;
           final title = p['title'] as String;
           final file = p['file'] as String;
@@ -517,37 +428,36 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
           try {
             final content = await rootBundle.loadString('wiki/$file');
             final text = EmbeddingService.buildWikiPageText(title, content);
-            // Include version in hash so pages re-index on app update
             final hash = EmbeddingService.computeContentHash('$wikiVersion:$text');
 
-            final existing = await _db.getEmbeddingBySourceId(sourceId);
-            if (await _isAlreadyIndexed(sourceId, hash)) continue;
-            if (existing != null &&
-                existing.contentHash == hash &&
-                existing.modelName == _modelName) {
-              continue; // Already indexed with same content
-            }
+            if (!force && await _isAlreadyIndexed(sourceId, hash)) continue;
 
             final vector = await _service.generateEmbedding(text);
-            if (vector == null) continue;
+            if (vector == null) {
+              debugPrint('[WikiIndex] embedding returned null for $file');
+              continue;
+            }
 
             await _upsertVector(
-              sqliteId: existing?.id ?? _uuid.v4(),
               sourceId: sourceId,
               sourceType: 'wiki_page',
               hash: hash,
               vector: vector,
             );
-          } catch (_) {
-            // Skip pages that fail to load
+            indexed++;
+            debugPrint('[WikiIndex] indexed $file ($indexed so far)');
+          } catch (e) {
+            debugPrint('[WikiIndex] error on $file: $e');
           }
         }
       }
 
       await refreshStats();
-    } catch (_) {
-      // Wiki index not available — skip silently
+      debugPrint('[WikiIndex] done — $indexed pages indexed');
+    } catch (e) {
+      debugPrint('[WikiIndex] outer error: $e');
     }
+    return indexed;
   }
 
   /// Re-index all entries, notes, documents, and chat sessions from scratch.
@@ -594,10 +504,7 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
     );
 
     // Clear all existing embeddings and document chunks
-    if (LanceDbService.isAvailable) {
-      try { await LanceDbService.deleteAll(); } catch (_) {}
-    }
-    await _db.deleteAllEmbeddings();
+    try { await LanceDbService.deleteAll(); } catch (_) {}
     for (final doc in docsList) {
       await _db.deleteChunksByDocumentId(doc.id);
     }
@@ -611,21 +518,17 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
       final vector = await _service.generateEmbedding(text);
 
       if (vector != null) {
-        await _db.upsertEmbedding(EmbeddingsCompanion(
-          id: Value(_uuid.v4()),
-          sourceId: Value(entry.id),
-          sourceType: const Value('vault_entry'),
-          embedding: Value(jsonEncode(vector)),
-          modelName: Value(_modelName),
-          contentHash: Value(hash),
-          createdAt: Value(DateTime.now()),
-        ));
+        await LanceDbService.upsertEmbedding(
+          sourceId: entry.id,
+          sourceType: 'vault_entry',
+          modelName: _modelName,
+          contentHash: hash,
+          vector: vector,
+        );
       }
 
       processed++;
-      if (mounted) {
-        state = state.copyWith(processedItems: processed);
-      }
+      if (mounted) state = state.copyWith(processedItems: processed);
     }
 
     for (final note in notesList) {
@@ -635,21 +538,17 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
       final vector = await _service.generateEmbedding(text);
 
       if (vector != null) {
-        await _db.upsertEmbedding(EmbeddingsCompanion(
-          id: Value(_uuid.v4()),
-          sourceId: Value(note.id),
-          sourceType: const Value('note'),
-          embedding: Value(jsonEncode(vector)),
-          modelName: Value(_modelName),
-          contentHash: Value(hash),
-          createdAt: Value(DateTime.now()),
-        ));
+        await LanceDbService.upsertEmbedding(
+          sourceId: note.id,
+          sourceType: 'note',
+          modelName: _modelName,
+          contentHash: hash,
+          vector: vector,
+        );
       }
 
       processed++;
-      if (mounted) {
-        state = state.copyWith(processedItems: processed);
-      }
+      if (mounted) state = state.copyWith(processedItems: processed);
     }
 
     for (final idea in ideaList) {
@@ -659,21 +558,17 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
       final vector = await _service.generateEmbedding(text);
 
       if (vector != null) {
-        await _db.upsertEmbedding(EmbeddingsCompanion(
-          id: Value(_uuid.v4()),
-          sourceId: Value(idea.id),
-          sourceType: const Value('idea'),
-          embedding: Value(jsonEncode(vector)),
-          modelName: Value(_modelName),
-          contentHash: Value(hash),
-          createdAt: Value(DateTime.now()),
-        ));
+        await LanceDbService.upsertEmbedding(
+          sourceId: idea.id,
+          sourceType: 'idea',
+          modelName: _modelName,
+          contentHash: hash,
+          vector: vector,
+        );
       }
 
       processed++;
-      if (mounted) {
-        state = state.copyWith(processedItems: processed);
-      }
+      if (mounted) state = state.copyWith(processedItems: processed);
     }
 
     // Re-index documents (each document generates multiple chunk embeddings)
@@ -710,15 +605,13 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
           final vector = await _service.generateEmbedding(textForEmbedding);
 
           if (vector != null) {
-            await _db.upsertEmbedding(EmbeddingsCompanion(
-              id: Value(_uuid.v4()),
-              sourceId: Value(chunkId),
-              sourceType: const Value('document_chunk'),
-              embedding: Value(jsonEncode(vector)),
-              modelName: Value(_modelName),
-              contentHash: Value(chunkHash),
-              createdAt: Value(DateTime.now()),
-            ));
+            await LanceDbService.upsertEmbedding(
+              sourceId: chunkId,
+              sourceType: 'document_chunk',
+              modelName: _modelName,
+              contentHash: chunkHash,
+              vector: vector,
+            );
           }
         }
 
@@ -733,9 +626,7 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
       }
 
       processed++;
-      if (mounted) {
-        state = state.copyWith(processedItems: processed);
-      }
+      if (mounted) state = state.copyWith(processedItems: processed);
     }
 
     // Re-index chat sessions that were previously saved & indexed
@@ -760,21 +651,17 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
       final vector = await _service.generateEmbedding(text);
 
       if (vector != null) {
-        await _db.upsertEmbedding(EmbeddingsCompanion(
-          id: Value(_uuid.v4()),
-          sourceId: Value(chatSession.id),
-          sourceType: const Value('chat_session'),
-          embedding: Value(jsonEncode(vector)),
-          modelName: Value(_modelName),
-          contentHash: Value(hash),
-          createdAt: Value(DateTime.now()),
-        ));
+        await LanceDbService.upsertEmbedding(
+          sourceId: chatSession.id,
+          sourceType: 'chat_session',
+          modelName: _modelName,
+          contentHash: hash,
+          vector: vector,
+        );
       }
 
       processed++;
-      if (mounted) {
-        state = state.copyWith(processedItems: processed);
-      }
+      if (mounted) state = state.copyWith(processedItems: processed);
     }
 
     // Re-index audit logs
@@ -793,30 +680,30 @@ class EmbeddingIndexNotifier extends StateNotifier<EmbeddingIndexState> {
       final vector = await _service.generateEmbedding(text);
 
       if (vector != null) {
-        await _db.upsertEmbedding(EmbeddingsCompanion(
-          id: Value(_uuid.v4()),
-          sourceId: Value(sourceId),
-          sourceType: const Value('audit_log'),
-          embedding: Value(jsonEncode(vector)),
-          modelName: Value(_modelName),
-          contentHash: Value(hash),
-          createdAt: Value(DateTime.now()),
-        ));
+        await LanceDbService.upsertEmbedding(
+          sourceId: sourceId,
+          sourceType: 'audit_log',
+          modelName: _modelName,
+          contentHash: hash,
+          vector: vector,
+        );
       }
 
       processed++;
-      if (mounted) {
-        state = state.copyWith(processedItems: processed);
-      }
+      if (mounted) state = state.copyWith(processedItems: processed);
     }
 
     if (mounted) {
-      final count = await _db.countEmbeddings();
+      int finalCount = 0;
+      try {
+        final stats = await LanceDbService.getStats();
+        finalCount = stats.totalEmbeddings.toInt();
+      } catch (_) {}
       state = EmbeddingIndexState(
         isIndexing: false,
         totalItems: total,
         processedItems: total,
-        indexedCount: count,
+        indexedCount: finalCount,
       );
     }
   }

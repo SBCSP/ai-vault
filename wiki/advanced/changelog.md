@@ -1,5 +1,24 @@
 # Changelog
 
+## v1.3.2 — Bug Fixes & Wiki Indexing
+- Fixed Flutter Navigator crash (`_history.isNotEmpty`) caused by nested navigators inside IndexedStack
+- Fixed LanceDB "Delete All Vectors" dialog not closing and corrupting navigator history
+- Fixed all confirmation dialogs across LanceDB and Vector DB settings to use correct dialog context
+- Fixed LanceDB Collections tab showing only 3 collections — LanceDB 0.14 full-scan now returns all rows
+- Fixed LanceDB Browser tab and hash lookup with the same full-scan fix
+- Added "Index Wiki" button to the Wiki screen for on-demand RAG re-indexing of all wiki pages
+
+## v1.3.1 — LanceDB Exclusive + Enterprise UI
+- Full enterprise UI revamp: 220px dark sidebar (GitHub-inspired), Inter font, compact desktop density, border-over-shadow design
+- Design token system: AppColors, AppSpacing, AppTheme with full Material 3 overrides
+- Grouped sidebar navigation with section labels and hover states
+- Smooth 160ms fade transitions between sections
+- LanceDB is now the exclusive vector store — SQLite embedding fallback removed
+- New LanceDB management screen in the sidebar (metrics, dimension config, index controls)
+- Vector Database card removed from Settings
+- Renamed "Documents" nav item to "Files"
+- Linear integration added as a first-class sidebar item
+
 ## v1.1.0 — Document Builder
 - AI-powered Document Builder with split-pane .docx editor and LLM chat
 - Real-time document editing: AI directly inserts, replaces, and deletes content at the right location

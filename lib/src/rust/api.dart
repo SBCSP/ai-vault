@@ -8,7 +8,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `ensure_table`, `escape_sql`, `get_config`, `global`, `make_batch`, `make_schema`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `LanceConfig`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`
 
 /// Initialise LanceDB at `db_path`.  Must be called once at app startup.
 /// `embedding_dim` must match the model (nomic-embed-text → 768).
@@ -80,6 +80,64 @@ Future<void> lanceDeleteAll() => RustLib.instance.api.crateApiLanceDeleteAll();
 Future<bool> lanceIsInitialized() =>
     RustLib.instance.api.crateApiLanceIsInitialized();
 
+/// Return row counts grouped by source_type.  Used by the Collections tab.
+Future<List<TypeCount>> lanceGetTypeCounts() =>
+    RustLib.instance.api.crateApiLanceGetTypeCounts();
+
+/// Return a page of embedding rows (no vector data) for the Browser tab.
+/// `source_type_filter` — empty string means all types.
+/// `offset` / `limit`  — for pagination.
+Future<List<EmbeddingRow>> lanceGetRowsPage({
+  required String sourceTypeFilter,
+  required PlatformInt64 offset,
+  required PlatformInt64 limit,
+}) => RustLib.instance.api.crateApiLanceGetRowsPage(
+  sourceTypeFilter: sourceTypeFilter,
+  offset: offset,
+  limit: limit,
+);
+
+/// Delete all embeddings of a given source_type.  Used by the Collections tab.
+Future<void> lanceDeleteByType({required String sourceType}) =>
+    RustLib.instance.api.crateApiLanceDeleteByType(sourceType: sourceType);
+
+/// A single embedding row with all metadata but *without* the vector bytes.
+/// Used by the Browser tab — we never want to ship raw float arrays to Dart UI.
+class EmbeddingRow {
+  final String sourceId;
+  final String sourceType;
+  final String modelName;
+  final String contentHash;
+  final PlatformInt64 createdAt;
+
+  const EmbeddingRow({
+    required this.sourceId,
+    required this.sourceType,
+    required this.modelName,
+    required this.contentHash,
+    required this.createdAt,
+  });
+
+  @override
+  int get hashCode =>
+      sourceId.hashCode ^
+      sourceType.hashCode ^
+      modelName.hashCode ^
+      contentHash.hashCode ^
+      createdAt.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is EmbeddingRow &&
+          runtimeType == other.runtimeType &&
+          sourceId == other.sourceId &&
+          sourceType == other.sourceType &&
+          modelName == other.modelName &&
+          contentHash == other.contentHash &&
+          createdAt == other.createdAt;
+}
+
 class SimilarityResult {
   final String sourceId;
   final String sourceType;
@@ -146,6 +204,25 @@ class SourceHashEntry {
           sourceType == other.sourceType &&
           contentHash == other.contentHash &&
           modelName == other.modelName;
+}
+
+/// Per-source-type row count.  Used by the Collections tab.
+class TypeCount {
+  final String sourceType;
+  final PlatformInt64 count;
+
+  const TypeCount({required this.sourceType, required this.count});
+
+  @override
+  int get hashCode => sourceType.hashCode ^ count.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TypeCount &&
+          runtimeType == other.runtimeType &&
+          sourceType == other.sourceType &&
+          count == other.count;
 }
 
 class VectorDbStats {

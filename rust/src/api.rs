@@ -55,6 +55,23 @@ pub struct VectorDbStats {
     pub embedding_dim: i32,
 }
 
+/// Per-source-type row count.  Used by the Collections tab.
+pub struct TypeCount {
+    pub source_type: String,
+    pub count: i64,
+}
+
+/// A single embedding row with all metadata but *without* the vector bytes.
+/// Used by the Browser tab — we never want to ship raw float arrays to Dart UI.
+#[derive(Clone)]
+pub struct EmbeddingRow {
+    pub source_id: String,
+    pub source_type: String,
+    pub model_name: String,
+    pub content_hash: String,
+    pub created_at: i64, // Unix milliseconds
+}
+
 // ─── Global state ────────────────────────────────────────────────────────────
 
 static STATE: OnceCell<Arc<Mutex<Option<LanceConfig>>>> = OnceCell::new();
@@ -368,21 +385,26 @@ pub async fn lance_get_all_hashes(source_type_filter: String) -> Result<Vec<Sour
     let cfg = get_config().await?;
     let table = cfg.conn.open_table("embeddings").execute().await?;
 
-    let mut q = table.query().select(Select::columns(&[
-        "source_id",
-        "source_type",
-        "content_hash",
-        "model_name",
-    ]));
+    // LanceDB 0.14: only_if() is required to trigger the predicate-scan path
+    // that iterates every fragment. Without it, only a partial result is returned.
+    let filter = if source_type_filter.is_empty() {
+        "source_id IS NOT NULL".to_string()
+    } else {
+        format!("source_type = '{}'", escape_sql(&source_type_filter))
+    };
 
-    if !source_type_filter.is_empty() {
-        q = q.only_if(format!(
-            "source_type = '{}'",
-            escape_sql(&source_type_filter)
-        ));
-    }
-
-    let mut stream = q.execute().await?;
+    let mut stream = table
+        .query()
+        .select(Select::columns(&[
+            "source_id",
+            "source_type",
+            "content_hash",
+            "model_name",
+        ]))
+        .only_if(filter)
+        .limit(10_000_000)
+        .execute()
+        .await?;
     let mut results = Vec::new();
 
     while let Some(batch) = stream.next().await {
@@ -474,4 +496,114 @@ pub fn lance_is_initialized() -> bool {
         .try_lock()
         .map(|g| g.is_some())
         .unwrap_or(false)
+}
+
+/// Return row counts grouped by source_type.  Used by the Collections tab.
+pub async fn lance_get_type_counts() -> Result<Vec<TypeCount>> {
+    let cfg = get_config().await?;
+    let table = cfg.conn.open_table("embeddings").execute().await?;
+
+    // Fetch just source_type for all rows and count in Rust.
+    // LanceDB 0.14: must use only_if() + limit() to trigger the predicate-scan
+    // path that iterates every fragment.  Without only_if(), the query uses a
+    // different code path and returns only a partial result set.
+    let mut stream = table
+        .query()
+        .select(Select::columns(&["source_type"]))
+        .only_if("source_id IS NOT NULL")
+        .limit(10_000_000)
+        .execute()
+        .await?;
+
+    let mut counts: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
+
+    while let Some(batch) = stream.next().await {
+        let batch = batch?;
+        let types = batch
+            .column_by_name("source_type")
+            .unwrap()
+            .as_string::<i32>();
+        for i in 0..batch.num_rows() {
+            *counts.entry(types.value(i).to_string()).or_insert(0) += 1;
+        }
+    }
+
+    let mut result: Vec<TypeCount> = counts
+        .into_iter()
+        .map(|(source_type, count)| TypeCount { source_type, count })
+        .collect();
+    result.sort_by(|a, b| a.source_type.cmp(&b.source_type));
+    Ok(result)
+}
+
+/// Return a page of embedding rows (no vector data) for the Browser tab.
+/// `source_type_filter` — empty string means all types.
+/// `offset` / `limit`  — for pagination.
+pub async fn lance_get_rows_page(
+    source_type_filter: String,
+    offset: i64,
+    limit: i64,
+) -> Result<Vec<EmbeddingRow>> {
+    let cfg = get_config().await?;
+    let table = cfg.conn.open_table("embeddings").execute().await?;
+
+    // LanceDB 0.14: only_if() is required to trigger the predicate-scan path
+    // that iterates every fragment. Without it, only a partial result is returned.
+    let filter = if source_type_filter.is_empty() {
+        "source_id IS NOT NULL".to_string()
+    } else {
+        format!("source_type = '{}'", escape_sql(&source_type_filter))
+    };
+
+    let mut stream = table
+        .query()
+        .select(Select::columns(&[
+            "source_id",
+            "source_type",
+            "model_name",
+            "content_hash",
+            "created_at",
+        ]))
+        .only_if(filter)
+        .limit(10_000_000)
+        .execute()
+        .await?;
+
+    let mut all: Vec<EmbeddingRow> = Vec::new();
+    while let Some(batch) = stream.next().await {
+        let batch = batch?;
+        let source_ids = batch.column_by_name("source_id").unwrap().as_string::<i32>();
+        let source_types = batch.column_by_name("source_type").unwrap().as_string::<i32>();
+        let models = batch.column_by_name("model_name").unwrap().as_string::<i32>();
+        let hashes = batch.column_by_name("content_hash").unwrap().as_string::<i32>();
+        let created_ats = batch
+            .column_by_name("created_at")
+            .unwrap()
+            .as_primitive::<arrow_array::types::Int64Type>();
+
+        for i in 0..batch.num_rows() {
+            all.push(EmbeddingRow {
+                source_id: source_ids.value(i).to_string(),
+                source_type: source_types.value(i).to_string(),
+                model_name: models.value(i).to_string(),
+                content_hash: hashes.value(i).to_string(),
+                created_at: created_ats.value(i),
+            });
+        }
+    }
+
+    // Apply offset + limit in memory (LanceDB doesn't expose SQL OFFSET)
+    let start = (offset as usize).min(all.len());
+    let end = (start + limit as usize).min(all.len());
+    Ok(all[start..end].to_vec())
+}
+
+/// Delete all embeddings of a given source_type.  Used by the Collections tab.
+pub async fn lance_delete_by_type(source_type: String) -> Result<()> {
+    let cfg = get_config().await?;
+    let table = cfg.conn.open_table("embeddings").execute().await?;
+    table
+        .delete(&format!("source_type = '{}'", escape_sql(&source_type)))
+        .await?;
+    Ok(())
 }
