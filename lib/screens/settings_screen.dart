@@ -675,6 +675,44 @@ class _ClaudeApiCardState extends ConsumerState<_ClaudeApiCard> {
   bool _keyVisible = false;
   bool _testing = false;
   bool? _testResult;
+  List<(String, String)>? _fetchedModels;
+  bool _fetchingModels = false;
+  String? _fetchModelsError;
+
+  @override
+  void initState() {
+    super.initState();
+    // Defer so the notifier's async _load() has time to reassign state.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && ref.read(claudeApiProvider).isConfigured) _fetchModels();
+    });
+  }
+
+  Future<void> _fetchModels() async {
+    final claude = ref.read(claudeApiProvider);
+    if (!claude.isConfigured) return;
+    setState(() {
+      _fetchingModels = true;
+      _fetchModelsError = null;
+    });
+    try {
+      final models = await claude.fetchModels();
+      if (mounted) {
+        ref.read(claudeModelsCacheProvider.notifier).state = models;
+        setState(() {
+          _fetchedModels = models;
+          _fetchingModels = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _fetchingModels = false;
+          _fetchModelsError = e.toString();
+        });
+      }
+    }
+  }
 
   @override
   void dispose() {
@@ -697,10 +735,95 @@ class _ClaudeApiCardState extends ConsumerState<_ClaudeApiCard> {
     }
   }
 
+  Widget _buildModelRow(ThemeData theme, ClaudeApiService claude, String modelId, String name) {
+    final isSelected = claude.model == modelId;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Material(
+        color: isSelected ? theme.colorScheme.primaryContainer : Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: () => ref.read(claudeApiProvider.notifier).updateModel(modelId),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            child: Row(
+              children: [
+                Icon(
+                  isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
+                  size: 18,
+                  color: isSelected ? theme.colorScheme.primary : theme.colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    name,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                    ),
+                  ),
+                ),
+                Text(
+                  modelId,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    fontSize: 10,
+                    color: theme.colorScheme.onSurfaceVariant,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _buildModelRows(ThemeData theme, ClaudeApiService claude) {
+    // Use live models if fetched, otherwise fall back to static list.
+    final List<(String, String)> models = (_fetchedModels != null && _fetchedModels!.isNotEmpty)
+        ? _fetchedModels!
+        : ClaudeApiService.fallbackModels.map((e) => (e.$1, e.$2)).toList();
+
+    final rows = <Widget>[];
+
+    // If the currently selected model isn't in the list, show it first
+    final selectedInList = models.any((m) => m.$1 == claude.model);
+    if (!selectedInList && claude.model.isNotEmpty) {
+      rows.add(_buildModelRow(theme, claude, claude.model, '${claude.model} (current)'));
+    }
+
+    for (final (modelId, name) in models) {
+      rows.add(_buildModelRow(theme, claude, modelId, name));
+    }
+
+    // Wrap in a scrollable container if there are many models
+    if (rows.length > 6) {
+      return [
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 300),
+          child: ListView(
+            shrinkWrap: true,
+            children: rows,
+          ),
+        ),
+      ];
+    }
+
+    return rows;
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final claude = ref.watch(claudeApiProvider);
+
+    // Auto-fetch models when the API key first becomes available
+    ref.listen<ClaudeApiService>(claudeApiProvider, (prev, next) {
+      if (!prev!.isConfigured && next.isConfigured && _fetchedModels == null) {
+        _fetchModels();
+      }
+    });
     final llmProvider = ref.watch(llmProviderTypeProvider);
     final isActive = llmProvider == LlmProviderType.claude;
 
@@ -824,6 +947,7 @@ class _ClaudeApiCardState extends ConsumerState<_ClaudeApiCard> {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(content: Text('API key saved'), duration: Duration(seconds: 2)),
                         );
+                        _fetchModels();
                       },
                       visualDensity: VisualDensity.compact,
                     ),
@@ -833,48 +957,67 @@ class _ClaudeApiCardState extends ConsumerState<_ClaudeApiCard> {
             ),
             const SizedBox(height: 12),
             // Model selector
-            Text('Model', style: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w600)),
-            const SizedBox(height: 6),
-            ...ClaudeApiService.availableModels.map((entry) {
-              final (modelId, name, desc) = entry;
-              final isSelected = claude.model == modelId;
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Material(
-                  color: isSelected ? theme.colorScheme.primaryContainer : Colors.transparent,
-                  borderRadius: BorderRadius.circular(8),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(8),
-                    onTap: () => ref.read(claudeApiProvider.notifier).updateModel(modelId),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                      child: Row(
-                        children: [
-                          Icon(
-                            isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
-                            size: 18,
-                            color: isSelected ? theme.colorScheme.primary : theme.colorScheme.onSurfaceVariant,
-                          ),
-                          const SizedBox(width: 10),
-                          Text(name, style: theme.textTheme.bodyMedium?.copyWith(
-                            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                          )),
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: theme.colorScheme.surfaceContainerHighest,
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(desc, style: theme.textTheme.labelSmall?.copyWith(fontSize: 10)),
-                          ),
-                        ],
+            Row(
+              children: [
+                Text('Model', style: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w600)),
+                const SizedBox(width: 8),
+                if (_fetchedModels != null && _fetchedModels!.isNotEmpty)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: Colors.green.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      '${_fetchedModels!.length} models (live)',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: Colors.green,
+                        fontSize: 10,
+                      ),
+                    ),
+                  )
+                else if (_fetchedModels == null && _fetchModelsError == null && !_fetchingModels)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      'defaults',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: Colors.orange,
+                        fontSize: 10,
                       ),
                     ),
                   ),
+                const Spacer(),
+                if (_fetchingModels)
+                  const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                else
+                  IconButton(
+                    icon: const Icon(Icons.refresh, size: 16),
+                    tooltip: 'Refresh available models',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: claude.isConfigured ? _fetchModels : null,
+                  ),
+              ],
+            ),
+            if (_fetchModelsError != null) ...[
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text(
+                  'Could not load models: $_fetchModelsError\n${_fetchedModels == null ? 'Showing defaults.' : ''} Tap refresh to retry.',
+                  style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.error),
                 ),
-              );
-            }),
+              ),
+            ],
+            const SizedBox(height: 4),
+            ..._buildModelRows(theme, claude),
             const SizedBox(height: 8),
             // Test connection button
             Row(
