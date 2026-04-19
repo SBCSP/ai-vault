@@ -933,8 +933,8 @@ class _StatusBanner extends StatelessWidget {
       return _StatusCard(
         icon: Icons.check_circle_rounded,
         iconColor: AppColors.success,
-        bgColor: AppColors.successSurface,
-        borderColor: AppColors.success.withValues(alpha: 0.3),
+        bgColor: AppColors.successSurface.withValues(alpha: 0.35),
+        borderColor: AppColors.success.withValues(alpha: 0.25),
         title: 'LanceDB Active',
         subtitle: 'Rust native vector storage — high-performance ANN search',
       );
